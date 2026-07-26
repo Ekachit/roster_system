@@ -1,7 +1,9 @@
 create type public.shift_status as enum ('DRAFT', 'PUBLISHED', 'CANCELLED');
+create type public.assignment_kind as enum ('REGULAR', 'SHADOWING');
 
 create table public.shifts (
   id uuid primary key default gen_random_uuid(),
+  shift_title text not null check (length(trim(shift_title)) > 0),
   local_date date not null,
   start_time time not null,
   end_time time not null,
@@ -28,6 +30,7 @@ create table public.shift_assignments (
   id uuid primary key default gen_random_uuid(),
   shift_id uuid not null references public.shifts(id) on delete restrict,
   staff_id uuid not null references public.staff(id) on delete restrict,
+  assignment_kind public.assignment_kind not null default 'REGULAR',
   assigned_by uuid not null references public.staff(id) on delete restrict,
   assigned_at timestamptz not null default now(),
   override_confirmed boolean not null default false,
@@ -103,6 +106,12 @@ begin
 end;
 $$;
 
+create or replace function public.is_valid_melbourne_local_time(p_date date, p_time time)
+returns boolean language sql stable set search_path = '' as $$
+  select p_date is not null and p_time is not null and
+    ((p_date + p_time) at time zone 'Australia/Melbourne' at time zone 'Australia/Melbourne') = p_date + p_time
+$$;
+
 create or replace function public.assignment_conflicts(p_shift_id uuid, p_staff_id uuid)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
 declare
@@ -131,10 +140,10 @@ begin
     v_conflicts := v_conflicts || jsonb_build_array(jsonb_build_object('code','INACTIVE_EMPLOYEE','message','Employee is inactive or is not an employee.','overridable',false));
   end if;
   if not exists (select 1 from public.staff_locations where staff_id = p_staff_id and location_id = v_shift.location_id) then
-    v_conflicts := v_conflicts || jsonb_build_array(jsonb_build_object('code','LOCATION_NOT_ELIGIBLE','message','Employee is not eligible for this location.','overridable',true));
+    v_conflicts := v_conflicts || jsonb_build_array(jsonb_build_object('code','LOCATION_NOT_ELIGIBLE','message','Employee is not eligible for this location.','overridable',false));
   end if;
   if not exists (select 1 from public.staff_activity_types where staff_id = p_staff_id and activity_type_id = v_shift.activity_type_id) then
-    v_conflicts := v_conflicts || jsonb_build_array(jsonb_build_object('code','ACTIVITY_NOT_ELIGIBLE','message','Employee is not eligible for this activity.','overridable',true));
+    v_conflicts := v_conflicts || jsonb_build_array(jsonb_build_object('code','ACTIVITY_NOT_ELIGIBLE','message','Employee is not eligible for this activity.','overridable',false));
   end if;
   if exists (
     select 1 from public.shift_assignments a
@@ -198,24 +207,28 @@ returns table (
 $$;
 
 create or replace function public.save_shift(
-  p_shift_id uuid, p_local_date date, p_start_time time, p_end_time time,
+  p_shift_id uuid, p_shift_title text, p_local_date date, p_start_time time, p_end_time time,
   p_location_id uuid, p_activity_type_id uuid, p_required_staff_count integer, p_notes text
 ) returns uuid language plpgsql security definer set search_path = '' as $$
 declare v_actor uuid := public.require_supervisor(); v_id uuid;
 begin
-  if p_local_date is null or p_start_time is null or p_end_time is null or p_end_time <= p_start_time then
+  if length(trim(coalesce(p_shift_title,'')))=0 then raise exception 'Shift title is required'; end if;
+  if p_local_date is null or p_start_time is null or p_end_time is null or p_end_time <= p_start_time
+     or not public.is_valid_melbourne_local_time(p_local_date,p_start_time)
+     or not public.is_valid_melbourne_local_time(p_local_date,p_end_time) then
     raise exception 'Invalid shift time';
   end if;
   if p_required_staff_count is null or p_required_staff_count < 1 then raise exception 'Required staff count must be at least 1'; end if;
   if not exists (select 1 from public.locations where id = p_location_id and is_active) then raise exception 'Active location required'; end if;
   if not exists (select 1 from public.activity_types where id = p_activity_type_id and is_active) then raise exception 'Active activity type required'; end if;
   if p_shift_id is null then
-    insert into public.shifts(local_date,start_time,end_time,location_id,activity_type_id,required_staff_count,notes,created_by,updated_by)
-    values(p_local_date,p_start_time,p_end_time,p_location_id,p_activity_type_id,p_required_staff_count,nullif(trim(p_notes),''),v_actor,v_actor)
+    insert into public.shifts(shift_title,local_date,start_time,end_time,location_id,activity_type_id,required_staff_count,notes,created_by,updated_by)
+    values(trim(p_shift_title),p_local_date,p_start_time,p_end_time,p_location_id,p_activity_type_id,p_required_staff_count,nullif(trim(p_notes),''),v_actor,v_actor)
     returning id into v_id;
-    insert into public.roster_audit(actor_staff_id,action,shift_id) values(v_actor,'SHIFT_CREATED',v_id);
+    insert into public.roster_audit(actor_staff_id,action,shift_id,details)
+    values(v_actor,'SHIFT_CREATED',v_id,jsonb_build_object('shift_title',trim(p_shift_title)));
   else
-    update public.shifts set local_date=p_local_date,start_time=p_start_time,end_time=p_end_time,
+    update public.shifts set shift_title=trim(p_shift_title),local_date=p_local_date,start_time=p_start_time,end_time=p_end_time,
       location_id=p_location_id,activity_type_id=p_activity_type_id,required_staff_count=p_required_staff_count,
       notes=nullif(trim(p_notes),''),updated_by=v_actor
     where id=p_shift_id and status='DRAFT' returning id into v_id;
@@ -227,7 +240,8 @@ begin
         and a.shift_id<>v_id and other.status<>'CANCELLED' and other.local_date=p_local_date
         and other.start_time<p_end_time and p_start_time<other.end_time
     ) then raise exception 'Edit would create overlapping active assignments'; end if;
-    insert into public.roster_audit(actor_staff_id,action,shift_id) values(v_actor,'SHIFT_EDITED',v_id);
+    insert into public.roster_audit(actor_staff_id,action,shift_id,details)
+    values(v_actor,'SHIFT_EDITED',v_id,jsonb_build_object('shift_title',trim(p_shift_title)));
   end if;
   return v_id;
 end;
@@ -239,10 +253,11 @@ declare v_actor uuid := public.require_supervisor(); v_source public.shifts%rowt
 begin
   select * into v_source from public.shifts where id=p_shift_id;
   if not found then raise exception 'Shift not found'; end if;
-  insert into public.shifts(local_date,start_time,end_time,location_id,activity_type_id,required_staff_count,notes,created_by,updated_by)
-  values(p_local_date,v_source.start_time,v_source.end_time,v_source.location_id,v_source.activity_type_id,v_source.required_staff_count,v_source.notes,v_actor,v_actor)
+  insert into public.shifts(shift_title,local_date,start_time,end_time,location_id,activity_type_id,required_staff_count,notes,created_by,updated_by)
+  values(v_source.shift_title,p_local_date,v_source.start_time,v_source.end_time,v_source.location_id,v_source.activity_type_id,v_source.required_staff_count,v_source.notes,v_actor,v_actor)
   returning id into v_id;
-  insert into public.roster_audit(actor_staff_id,action,shift_id,details) values(v_actor,'SHIFT_COPIED',v_id,jsonb_build_object('source_shift_id',p_shift_id));
+  insert into public.roster_audit(actor_staff_id,action,shift_id,details)
+  values(v_actor,'SHIFT_COPIED',v_id,jsonb_build_object('source_shift_id',p_shift_id,'shift_title',v_source.shift_title));
   return v_id;
 end;
 $$;
@@ -267,7 +282,8 @@ end;
 $$;
 
 create or replace function public.assign_employee(
-  p_shift_id uuid, p_staff_id uuid, p_override_confirmed boolean, p_override_reason text
+  p_shift_id uuid, p_staff_id uuid, p_assignment_kind public.assignment_kind,
+  p_override_confirmed boolean, p_override_reason text
 ) returns uuid language plpgsql security definer set search_path = '' as $$
 declare v_actor uuid := public.require_supervisor(); v_conflicts jsonb; v_id uuid;
 begin
@@ -279,8 +295,8 @@ begin
   if jsonb_array_length(v_conflicts)>0 and (not coalesce(p_override_confirmed,false) or length(trim(coalesce(p_override_reason,'')))=0) then
     raise exception 'Override confirmation and written reason required';
   end if;
-  insert into public.shift_assignments(shift_id,staff_id,assigned_by,override_confirmed,override_reason,override_conflicts)
-  values(p_shift_id,p_staff_id,v_actor,jsonb_array_length(v_conflicts)>0,
+  insert into public.shift_assignments(shift_id,staff_id,assignment_kind,assigned_by,override_confirmed,override_reason,override_conflicts)
+  values(p_shift_id,p_staff_id,p_assignment_kind,v_actor,jsonb_array_length(v_conflicts)>0,
     case when jsonb_array_length(v_conflicts)>0 then trim(p_override_reason) end,v_conflicts)
   returning id into v_id;
   insert into public.roster_audit(actor_staff_id,action,shift_id,assignment_id,subject_staff_id,reason,details)
@@ -304,7 +320,7 @@ end;
 $$;
 
 create or replace function public.replace_employee(
-  p_assignment_id uuid, p_replacement_staff_id uuid, p_override_confirmed boolean,
+  p_assignment_id uuid, p_replacement_staff_id uuid, p_assignment_kind public.assignment_kind, p_override_confirmed boolean,
   p_override_reason text, p_replacement_reason text
 ) returns uuid language plpgsql security definer set search_path = '' as $$
 declare v_actor uuid := public.require_supervisor(); v_shift uuid; v_old_staff uuid; v_new_id uuid; v_conflicts jsonb;
@@ -316,8 +332,8 @@ begin
   v_conflicts:=public.assignment_conflicts(v_shift,p_replacement_staff_id);
   if exists(select 1 from jsonb_array_elements(v_conflicts) x where not (x->>'overridable')::boolean) then raise exception 'Replacement has a non-overridable conflict: %',v_conflicts; end if;
   if jsonb_array_length(v_conflicts)>0 and (not coalesce(p_override_confirmed,false) or length(trim(coalesce(p_override_reason,'')))=0) then raise exception 'Override confirmation and written reason required'; end if;
-  insert into public.shift_assignments(shift_id,staff_id,assigned_by,override_confirmed,override_reason,override_conflicts)
-  values(v_shift,p_replacement_staff_id,v_actor,jsonb_array_length(v_conflicts)>0,
+  insert into public.shift_assignments(shift_id,staff_id,assignment_kind,assigned_by,override_confirmed,override_reason,override_conflicts)
+  values(v_shift,p_replacement_staff_id,p_assignment_kind,v_actor,jsonb_array_length(v_conflicts)>0,
     case when jsonb_array_length(v_conflicts)>0 then trim(p_override_reason) end,v_conflicts) returning id into v_new_id;
   update public.shift_assignments set removed_at=now(),removed_by=v_actor,removal_reason=trim(p_replacement_reason),replaced_by_assignment_id=v_new_id
   where id=p_assignment_id;
@@ -327,20 +343,50 @@ begin
 end;
 $$;
 
+create or replace function public.shift_staffing(p_shift_id uuid)
+returns table(required_staff_count integer, regular_assigned_count bigint, shadowing_count bigint, understaffed boolean)
+language sql stable security definer set search_path = '' as $$
+  select s.required_staff_count,
+    count(a.id) filter(where a.removed_at is null and a.assignment_kind='REGULAR'),
+    count(a.id) filter(where a.removed_at is null and a.assignment_kind='SHADOWING'),
+    count(a.id) filter(where a.removed_at is null and a.assignment_kind='REGULAR') < s.required_staff_count
+  from public.shifts s left join public.shift_assignments a on a.shift_id=s.id
+  where s.id=p_shift_id and public.is_supervisor()
+  group by s.id
+$$;
+
+create or replace function public.set_staff_active(p_staff_id uuid, p_is_active boolean)
+returns void language plpgsql security definer set search_path = '' as $$
+begin
+  lock table public.staff in share row exclusive mode;
+  if not public.is_supervisor() then raise exception 'Supervisor access required'; end if;
+  if not p_is_active and exists (
+    select 1 from public.shift_assignments a join public.shifts s on s.id=a.shift_id
+    where a.staff_id=p_staff_id and a.removed_at is null and s.status in ('DRAFT','PUBLISHED')
+      and s.local_date >= (now() at time zone 'Australia/Melbourne')::date
+  ) then raise exception 'Staff with future active assignments cannot be deactivated'; end if;
+  update public.staff set is_active=p_is_active where id=p_staff_id;
+  if not found then raise exception 'Staff profile not found'; end if;
+end;
+$$;
+
 revoke all on public.shifts, public.shift_assignments, public.roster_audit from anon, authenticated;
 grant select on public.shifts, public.shift_assignments, public.roster_audit to authenticated;
 revoke all on function public.require_supervisor() from public, anon;
+revoke all on function public.is_valid_melbourne_local_time(date,time) from public, anon;
 revoke all on function public.is_shift_published(uuid) from public, anon;
 revoke all on function public.assignment_conflicts(uuid,uuid) from public, anon;
 revoke all on function public.shift_candidates(uuid) from public, anon;
-revoke all on function public.save_shift(uuid,date,time,time,uuid,uuid,integer,text) from public, anon;
+revoke all on function public.save_shift(uuid,text,date,time,time,uuid,uuid,integer,text) from public, anon;
 revoke all on function public.copy_shift(uuid,date) from public, anon;
 revoke all on function public.set_shift_status(uuid,public.shift_status,text) from public, anon;
-revoke all on function public.assign_employee(uuid,uuid,boolean,text) from public, anon;
+revoke all on function public.assign_employee(uuid,uuid,public.assignment_kind,boolean,text) from public, anon;
 revoke all on function public.remove_employee(uuid,text) from public, anon;
-revoke all on function public.replace_employee(uuid,uuid,boolean,text,text) from public, anon;
+revoke all on function public.replace_employee(uuid,uuid,public.assignment_kind,boolean,text,text) from public, anon;
+revoke all on function public.shift_staffing(uuid) from public, anon;
 grant execute on function public.assignment_conflicts(uuid,uuid), public.shift_candidates(uuid),
-  public.save_shift(uuid,date,time,time,uuid,uuid,integer,text), public.copy_shift(uuid,date),
-  public.set_shift_status(uuid,public.shift_status,text), public.assign_employee(uuid,uuid,boolean,text),
-  public.remove_employee(uuid,text), public.replace_employee(uuid,uuid,boolean,text,text) to authenticated;
+  public.save_shift(uuid,text,date,time,time,uuid,uuid,integer,text), public.copy_shift(uuid,date),
+  public.set_shift_status(uuid,public.shift_status,text), public.assign_employee(uuid,uuid,public.assignment_kind,boolean,text),
+  public.remove_employee(uuid,text), public.replace_employee(uuid,uuid,public.assignment_kind,boolean,text,text),
+  public.shift_staffing(uuid) to authenticated;
 grant execute on function public.is_shift_published(uuid) to authenticated;

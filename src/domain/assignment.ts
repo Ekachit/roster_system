@@ -54,10 +54,10 @@ export function evaluateAssignmentCandidate(input: CandidateAssignmentInput): Ca
     conflicts.push(conflict('INACTIVE_EMPLOYEE', 'Employee is inactive.', false))
   }
   if (!input.locationEligible) {
-    conflicts.push(conflict('LOCATION_NOT_ELIGIBLE', 'Employee is not eligible for this location.', true))
+    conflicts.push(conflict('LOCATION_NOT_ELIGIBLE', 'Employee is not eligible for this location.', false))
   }
   if (!input.activityEligible) {
-    conflicts.push(conflict('ACTIVITY_NOT_ELIGIBLE', 'Employee is not eligible for this activity.', true))
+    conflicts.push(conflict('ACTIVITY_NOT_ELIGIBLE', 'Employee is not eligible for this activity.', false))
   }
   if (input.activeAssignments.some((item) => item.shiftId === input.shiftId)) {
     conflicts.push(conflict('DUPLICATE_ASSIGNMENT', 'Employee is already actively assigned to this shift.', false))
@@ -87,12 +87,11 @@ export function evaluateAssignmentCandidate(input: CandidateAssignmentInput): Ca
     conflicts.push(conflict('OUTSIDE_RECURRING_AVAILABILITY', 'Recurring availability does not cover this shift.', true))
   }
 
-  const blocking = conflicts.some((item) => !item.overridable)
   return {
     eligible: input.employeeActive && input.locationEligible && input.activityEligible,
     fullyAvailable: availability.fullyAvailable,
     assignableWithoutOverride: conflicts.length === 0,
-    conflicts: blocking ? conflicts : conflicts,
+    conflicts,
   }
 }
 
@@ -101,4 +100,16 @@ export function canOverrideConflicts(conflicts: AssignmentConflict[], confirmed:
     && conflicts.every((item) => item.overridable)
     && confirmed
     && reason.trim().length > 0
+}
+
+export function rosterWeekDays(mondayDate: string): string[] {
+  const start = new Date(`${mondayDate}T12:00:00Z`)
+  if (Number.isNaN(start.valueOf()) || (start.getUTCDay() || 7) !== 1) {
+    throw new Error('Roster week must start on a valid Monday.')
+  }
+  return Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(start)
+    day.setUTCDate(start.getUTCDate() + index)
+    return day.toISOString().slice(0, 10)
+  })
 }

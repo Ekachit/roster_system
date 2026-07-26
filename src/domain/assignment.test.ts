@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canOverrideConflicts, evaluateAssignmentCandidate, type CandidateAssignmentInput } from './assignment'
+import { canOverrideConflicts, evaluateAssignmentCandidate, rosterWeekDays, type CandidateAssignmentInput } from './assignment'
 
 const base: CandidateAssignmentInput = {
   employeeActive: true,
@@ -18,6 +18,13 @@ const base: CandidateAssignmentInput = {
 }
 
 describe('evaluateAssignmentCandidate', () => {
+  it('builds a complete Monday-to-Sunday roster week', () => {
+    expect(rosterWeekDays('2026-08-03')).toEqual([
+      '2026-08-03', '2026-08-04', '2026-08-05', '2026-08-06',
+      '2026-08-07', '2026-08-08', '2026-08-09',
+    ])
+  })
+
   it('accepts a fully available and eligible employee', () => {
     expect(evaluateAssignmentCandidate(base)).toMatchObject({
       eligible: true, fullyAvailable: true, assignableWithoutOverride: true, conflicts: [],
@@ -50,7 +57,9 @@ describe('evaluateAssignmentCandidate', () => {
   })
 
   it('requires confirmation and reason and never overrides hard conflicts', () => {
-    const warning = evaluateAssignmentCandidate({ ...base, locationEligible: false }).conflicts
+    const warning = evaluateAssignmentCandidate({
+      ...base, recurring: [{ ...base.recurring[0], end_time: '11:00' }],
+    }).conflicts
     expect(canOverrideConflicts(warning, true, 'Approved for one-off coverage')).toBe(true)
     expect(canOverrideConflicts(warning, false, 'Approved')).toBe(false)
     expect(canOverrideConflicts(warning, true, ' ')).toBe(false)
@@ -59,5 +68,10 @@ describe('evaluateAssignmentCandidate', () => {
       activeAssignments: [{ shiftId: 'shift-a', localDate: '2026-07-27', startTime: '10:00', endTime: '12:00' }],
     }).conflicts
     expect(canOverrideConflicts(duplicate, true, 'Try anyway')).toBe(false)
+    expect(canOverrideConflicts(
+      evaluateAssignmentCandidate({ ...base, locationEligible: false }).conflicts,
+      true,
+      'One off location',
+    )).toBe(false)
   })
 })

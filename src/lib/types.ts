@@ -27,9 +27,11 @@ export interface ReferenceRecord {
 export type { AvailabilityException, AvailabilityKind, RecurringAvailability } from '../domain/availability'
 
 export type ShiftStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED'
+export type AssignmentKind = 'REGULAR' | 'SHADOWING'
 
 export interface ShiftRecord {
   id: string
+  shift_title: string
   local_date: string
   start_time: string
   end_time: string
@@ -46,6 +48,7 @@ export interface ShiftAssignment {
   id: string
   shift_id: string
   staff_id: string
+  assignment_kind: AssignmentKind
   assigned_at: string
   removed_at: string | null
 }
