@@ -23,7 +23,10 @@ export function AppShell() {
               <NavLink className={linkClass} to="/supervisor/locations">Locations</NavLink>
               <NavLink className={linkClass} to="/supervisor/activity-types">Activities</NavLink>
             </>}
-            {!supervisor && <NavLink className={linkClass} to="/employee/availability">Availability</NavLink>}
+            {!supervisor && <>
+              <NavLink className={linkClass} to="/employee/schedule">My Schedule</NavLink>
+              <NavLink className={linkClass} to="/employee/availability">Availability</NavLink>
+            </>}
             <NavLink className={linkClass} to="/profile">Profile</NavLink>
           </nav>
           <button className="button-secondary min-h-9 px-3 py-1 text-sm" onClick={() => void signOut()}>Sign out</button>

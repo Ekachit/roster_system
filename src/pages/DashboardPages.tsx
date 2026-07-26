@@ -1,13 +1,52 @@
 import { useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/auth-context'
+import { EmptyState, ErrorState, LoadingState } from '../components/States'
+import { addScheduleDays, currentMelbourneTime, displayScheduleDate, displayScheduleTime, scheduleWeekStart, todayMelbourne } from '../domain/schedule'
 import { supabase } from '../lib/supabase'
+import { useEmployeeSchedule } from './useEmployeeSchedule'
 
 export function SupervisorDashboard() {
   return <><h1 className="text-3xl font-bold">Supervisor dashboard</h1><p className="mt-2 text-slate-600">Manage the staff directory, availability, and weekly roster.</p><div className="mt-6 grid gap-4 sm:grid-cols-3">{['Roster', 'Staff', 'Availability', 'Locations', 'Activity types'].map((item) => <div className="card" key={item}><h2 className="font-semibold">{item}</h2><p className="mt-1 text-sm text-slate-600">Configuration is ready.</p></div>)}</div></>
 }
 
 export function EmployeeDashboard() {
-  return <><h1 className="text-3xl font-bold">Employee dashboard</h1><p className="mt-2 text-slate-600">Welcome. Add your recurring weekly availability and any one-off exceptions from the Availability page.</p><div className="card mt-6"><h2 className="font-semibold">Availability is ready</h2><p className="mt-1 text-slate-600">Keep it current so future roster decisions can use the correct information.</p></div></>
+  const { items, loading, error, load } = useEmployeeSchedule()
+  const today = todayMelbourne()
+  const nowTime = currentMelbourneTime()
+  const weekStart = scheduleWeekStart(today)
+  const weekEnd = addScheduleDays(weekStart, 6)
+  const upcoming = items.filter((item) => item.local_date > today || (item.local_date === today && item.end_time > nowTime))
+  const next = upcoming[0]
+  const thisWeek = items.filter((item) => item.local_date >= weekStart && item.local_date <= weekEnd)
+  const outstanding = upcoming.filter((item) => !item.acknowledged_at).length
+
+  return <div>
+    <h1 className="text-3xl font-bold">Employee dashboard</h1>
+    <p className="mt-2 text-slate-600">Your published roster at a glance. Times use Australia/Melbourne.</p>
+    {loading ? <div className="mt-6"><LoadingState label="Loading your shifts…" /></div>
+      : error ? <div className="mt-6"><ErrorState message={error} retry={() => void load()} /></div>
+        : items.length === 0 ? <div className="mt-6"><EmptyState title="No published shifts yet">When your supervisor publishes a shift assigned to you, it will appear here and in My Schedule.</EmptyState></div>
+          : <>
+            <div className="mt-6 grid gap-4 sm:grid-cols-3">
+              <section className="card sm:col-span-2">
+                <h2 className="font-semibold">Next assigned shift</h2>
+                {next ? <div className="mt-3"><p className="text-lg font-semibold">{next.shift_title}</p><p className="mt-1 text-slate-600">{displayScheduleDate(next.local_date)} · {displayScheduleTime(next.start_time)}–{displayScheduleTime(next.end_time)}</p><p className="text-slate-600">{next.location_name} · {next.activity_name}</p><Link className="button-secondary mt-4" to={`/employee/shifts/${next.shift_id}`}>View details</Link></div>
+                  : <p className="mt-3 text-slate-600">You have no upcoming published shifts.</p>}
+              </section>
+              <section className="card">
+                <h2 className="font-semibold">Outstanding acknowledgements</h2>
+                <p className="mt-3 text-4xl font-bold text-blue-800">{outstanding}</p>
+                <Link className="mt-3 inline-block font-semibold text-blue-800 hover:underline" to="/employee/schedule">Open My Schedule</Link>
+              </section>
+            </div>
+            <section className="card mt-4">
+              <h2 className="font-semibold">Published shifts this week</h2>
+              {thisWeek.length ? <ul className="mt-3 divide-y">{thisWeek.map((item) => <li className="flex flex-wrap items-center justify-between gap-2 py-3" key={item.assignment_id}><span><strong>{displayScheduleDate(item.local_date)}</strong><span className="block text-sm text-slate-600">{displayScheduleTime(item.start_time)}–{displayScheduleTime(item.end_time)} · {item.location_name}</span></span><Link className="font-semibold text-blue-800 hover:underline" to={`/employee/shifts/${item.shift_id}`}>Details</Link></li>)}</ul>
+                : <p className="mt-3 text-slate-600">No published shifts assigned to you this week.</p>}
+            </section>
+          </>}
+  </div>
 }
 
 export function ProfilePage() {

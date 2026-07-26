@@ -52,3 +52,19 @@ export interface ShiftAssignment {
   assigned_at: string
   removed_at: string | null
 }
+
+export interface EmployeeScheduleItem {
+  assignment_id: string
+  shift_id: string
+  shift_title: string
+  local_date: string
+  start_time: string
+  end_time: string
+  location_name: string
+  activity_name: string
+  notes: string | null
+  assignment_kind: AssignmentKind
+  assignment_status: 'ASSIGNED'
+  acknowledged_at: string | null
+  colleague_names: string[]
+}

@@ -8,6 +8,7 @@ import { SignInPage } from './pages/SignInPage'
 import { StaffManagementPage } from './pages/StaffManagementPage'
 import { EmployeeAvailabilityPage, SupervisorAvailabilityPage } from './pages/AvailabilityPages'
 import { RosterPage } from './pages/RosterPage'
+import { EmployeeSchedulePage, EmployeeShiftDetailsPage } from './pages/EmployeeSchedulePage'
 
 export function App() {
   return (
@@ -22,6 +23,8 @@ export function App() {
               <Route path="unauthorised" element={<UnauthorisedPage />} />
               <Route element={<RequireRole role="employee" />}>
                 <Route path="employee" element={<EmployeeDashboard />} />
+                <Route path="employee/schedule" element={<EmployeeSchedulePage />} />
+                <Route path="employee/shifts/:shiftId" element={<EmployeeShiftDetailsPage />} />
                 <Route path="employee/availability" element={<EmployeeAvailabilityPage />} />
               </Route>
               <Route element={<RequireRole role="supervisor" />}>

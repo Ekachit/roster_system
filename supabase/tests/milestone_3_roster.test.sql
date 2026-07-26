@@ -99,7 +99,7 @@ select lives_ok($$select public.copy_shift((select id from roster_ids where key=
 select is((select count(*) from public.shifts where local_date='2026-08-09' and shift_title='Training coverage'),1::bigint,'Sunday copy retains shift title');
 
 select set_config('request.jwt.claim.sub','12000000-0000-0000-0000-000000000002',true);
-select is((select count(*) from public.shifts),0::bigint,'employee cannot read shifts directly, including drafts');
+select is((select count(*) from public.shifts),1::bigint,'employee reads only a shift containing their active published assignment');
 select is((select count(*) from public.shift_assignments),1::bigint,'employee reads only own active published assignment');
 select throws_like($$select public.save_shift(null,'Not allowed','2026-08-03','09:00','10:00',
   (select id from public.locations limit 1),(select id from public.activity_types limit 1),1,null)$$,
