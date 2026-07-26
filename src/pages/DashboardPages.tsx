@@ -3,11 +3,11 @@ import { useAuth } from '../auth/auth-context'
 import { supabase } from '../lib/supabase'
 
 export function SupervisorDashboard() {
-  return <><h1 className="text-3xl font-bold">Supervisor dashboard</h1><p className="mt-2 text-slate-600">Manage the staff directory and roster configuration.</p><div className="mt-6 grid gap-4 sm:grid-cols-3">{['Staff', 'Locations', 'Activity types'].map((item) => <div className="card" key={item}><h2 className="font-semibold">{item}</h2><p className="mt-1 text-sm text-slate-600">Foundation configuration is ready.</p></div>)}</div></>
+  return <><h1 className="text-3xl font-bold">Supervisor dashboard</h1><p className="mt-2 text-slate-600">Manage the staff directory, availability, and weekly roster.</p><div className="mt-6 grid gap-4 sm:grid-cols-3">{['Roster', 'Staff', 'Availability', 'Locations', 'Activity types'].map((item) => <div className="card" key={item}><h2 className="font-semibold">{item}</h2><p className="mt-1 text-sm text-slate-600">Configuration is ready.</p></div>)}</div></>
 }
 
 export function EmployeeDashboard() {
-  return <><h1 className="text-3xl font-bold">Employee dashboard</h1><p className="mt-2 text-slate-600">Welcome. Availability and schedule features arrive in later milestones.</p><div className="card mt-6"><h2 className="font-semibold">No actions yet</h2><p className="mt-1 text-slate-600">Your account and profile are ready.</p></div></>
+  return <><h1 className="text-3xl font-bold">Employee dashboard</h1><p className="mt-2 text-slate-600">Welcome. Add your recurring weekly availability and any one-off exceptions from the Availability page.</p><div className="card mt-6"><h2 className="font-semibold">Availability is ready</h2><p className="mt-1 text-slate-600">Keep it current so future roster decisions can use the correct information.</p></div></>
 }
 
 export function ProfilePage() {

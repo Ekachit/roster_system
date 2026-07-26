@@ -107,7 +107,7 @@ eligibility, locations, and activities; RLS tests pass.
 ### Verification
 
 - Test full/partial coverage, no rules, interval overlays, merged windows,
-  Monday-Friday boundaries, inactive staff, and Melbourne daylight-saving
+  all seven ISO weekdays, inactive staff, and Melbourne daylight-saving
   dates.
 - Prove employees cannot read or modify another employee’s availability.
 
@@ -129,7 +129,7 @@ availability, and server-side evaluation consistently explains availability.
 
 ### UI
 
-- Build Monday-Friday desktop roster and mobile day agenda.
+- Build a seven-day desktop roster and mobile day agenda.
 - Add week navigation and location/activity filters.
 - Build create, edit, copy, publish, and cancel workflows.
 - Build shift detail with assigned/candidate staff, reason messages, staffing
@@ -140,7 +140,7 @@ availability, and server-side evaluation consistently explains availability.
 
 - Add concurrent assignment tests, not only sequential happy-path tests.
 - Test draft/published/cancelled transitions and understaffing calculations.
-- Test rejection of weekend and Melbourne-local overnight shifts, protected
+- Test acceptance of weekend shifts, rejection of Melbourne-local overnight shifts, protected
   stale-safe shift editing, acknowledgement resets, and deactivation blockers.
 - Verify browser attempts cannot bypass override reasons or mutation rights.
 

@@ -131,15 +131,15 @@ Local weekly wall-clock rules.
 |---|---|---|
 | `id` | `uuid` | PK |
 | `staff_id` | `uuid` | FK `staff`, required |
-| `weekday` | `smallint` | required, ISO 1=Monday through 5=Friday for MVP |
+| `weekday` | `smallint` | required, ISO 1=Monday through 7=Sunday |
 | `start_time` | `time` | required |
 | `end_time` | `time` | required, greater than start |
 | `kind` | `availability_kind` | required |
 | `note` | `text` | nullable |
 | `created_at`, `updated_at` | `timestamptz` | required |
 
-Initially disallow overlapping records for the same employee, weekday, and kind,
-or provide a command that normalises them. Weekend support is deferred.
+Disallow overlapping records for the same employee and weekday when both their
+time intervals and effective-date periods overlap.
 
 No recurring rule means unavailable. The primary UI creates available recurring
 windows; date exceptions add or subtract availability at interval level.
@@ -193,8 +193,8 @@ a new draft and does not copy assignments, acknowledgements, or release
 requests.
 
 A constraint/trigger requires start and end to fall on the same
-`Australia/Melbourne` local date. The MVP accepts Monday-Friday shifts only;
-weekend and overnight shifts are prohibited.
+`Australia/Melbourne` local date. The MVP accepts all seven weekdays; overnight
+shifts are prohibited.
 
 ### `shift_assignments`
 
@@ -346,7 +346,7 @@ the function performs its own authorisation.
 `edit_shift` is the only browser-accessible way to mutate an existing shift. It
 uses `p_expected_updated_at` for stale-edit detection and accepts only an
 allowlisted typed patch. It locks the shift and assignments; validates
-Monday-Friday same-day timing and status; rechecks active status,
+seven-day same-day timing and status; rechecks active status,
 eligibility, overlap, and availability; requires per-assignment reasons for
 permitted availability overrides; resets acknowledgements when required;
 synchronises release requests; and audits the transaction.
@@ -532,7 +532,7 @@ Use migration-level SQL tests to prove:
 - unavailable assignment requires supervisor plus reason;
 - interval exceptions affect only their covered time and adjacent result
   intervals merge correctly;
-- weekend and Melbourne-local overnight shifts fail;
+- weekend shifts succeed and Melbourne-local overnight shifts fail;
 - material published-shift edits reset acknowledgement and staffing-only edits
   do not;
 - staff with future active assignments cannot be deactivated;

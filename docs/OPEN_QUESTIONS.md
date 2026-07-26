@@ -49,7 +49,7 @@ confirmed product requirements. Defaults below are planning assumptions only.
 
 ## Confirmed and not open
 
-- The MVP roster interface is Monday-Friday.
+- The MVP roster and availability interfaces support all seven days.
 - Roster dates and times display in `Australia/Melbourne`.
 - The security boundary is Supabase RLS and secure database functions.
 - Netlify Free and Supabase Free are the only hosting/backend services.

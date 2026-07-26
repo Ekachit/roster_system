@@ -20,7 +20,7 @@ was not restarted and no application code was implemented.
 | Finding | Correction |
 |---|---|
 | Google OAuth was stated as selected although the requirements do not select an Auth method. | Made the architecture provider-neutral and recorded email/password as an assumption. |
-| The architecture expanded the roster to seven days despite a Monday-Friday MVP requirement. | Restored a Monday-Friday interface and deferred weekends. |
+| The architecture expanded the roster to seven days based on an earlier interpretation. | Superseded on 27 July 2026: the confirmed product requirement supports weekend shifts and seven-day availability. |
 | Date-exception semantics conflicted between architecture and database design. | Aligned both to interval-based override as an explicit assumption. |
 | Some workflow decisions were described as confirmed without supervisor approval. | Separated confirmed requirements, assumptions, and open questions. |
 | A proposed release-request `cancelled` state was outside the specified statuses. | Removed it as a decision and recorded the workflow as open. |

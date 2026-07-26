@@ -177,7 +177,7 @@ A supervisor override must require a reason.
 
 ### 4.7 Supervisor weekly roster
 
-The application must provide a Monday-to-Friday weekly roster view.
+The application must provide a seven-day weekly roster view.
 
 Each shift should display:
 

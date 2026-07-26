@@ -187,9 +187,8 @@ The business timezone is `Australia/Melbourne`.
   are correct.
 - Persist all audit timestamps as `timestamptz`.
 
-The MVP roster and availability interface covers Monday to Friday, as specified
-in the requirements. The schema may use ISO weekday values without building a
-weekend interface. Weekend scheduling is deferred unless separately approved.
+The MVP roster and availability interfaces cover all seven ISO weekdays.
+Weekend shifts and availability use the same Melbourne-local rules as weekdays.
 
 Overnight shifts are prohibited in the MVP. A shift's Melbourne-local start and
 end must fall on the same date, and the end must be later than the start.
@@ -227,7 +226,7 @@ Recurring and date-specific availability intervals likewise require
 | Route | Page | Main responsibilities |
 |---|---|---|
 | `/supervisor` | Dashboard | Understaffing, requests, unpublished work |
-| `/supervisor/roster` | Weekly roster | Monday-Friday roster, filters, shift actions |
+| `/supervisor/roster` | Weekly roster | Seven-day roster, filters, shift actions |
 | `/supervisor/shifts/new` | New shift | Create shift |
 | `/supervisor/shifts/:shiftId` | Shift detail/edit | Edit, copy, assign, replace, publish, cancel |
 | `/supervisor/staff` | Staff list | Add, filter, activate/deactivate |
@@ -238,8 +237,8 @@ Recurring and date-specific availability intervals likewise require
 | `/supervisor/reports/hours` | Scheduled hours | Date range, totals, CSV export |
 | `/supervisor/audit` | Audit history | Filter important actions |
 
-On desktop, use a Monday-Friday grid. On mobile, use a Monday-Friday grouped
-agenda rather than a compressed grid. Shift create/edit can use pages, not
+On desktop, use a seven-day grid. On mobile, use a seven-day grouped agenda
+rather than a compressed grid. Shift create/edit can use pages, not
 nested modal routes, to preserve deep links and accessible focus behaviour.
 
 ## Availability and assignment approach
@@ -318,7 +317,7 @@ data. This is an operational check, not a reason to introduce a paid service.
 - The frontend is React, Vite, TypeScript, and Tailwind CSS.
 - Supabase Free provides Auth and PostgreSQL; Netlify Free hosts the static app.
 - Supervisor and employee permissions are enforced by RLS and secure functions.
-- The roster interface is Monday-Friday and uses `Australia/Melbourne`.
+- The roster and availability interfaces support seven days and use `Australia/Melbourne`.
 - Calendar integration, notifications, payroll, timesheet import, automatic
   allocation, swapping, and other listed deferred features are excluded.
 

@@ -23,3 +23,29 @@ export interface ReferenceRecord {
   default_start_time: string | null
   default_end_time: string | null
 }
+
+export type { AvailabilityException, AvailabilityKind, RecurringAvailability } from '../domain/availability'
+
+export type ShiftStatus = 'DRAFT' | 'PUBLISHED' | 'CANCELLED'
+
+export interface ShiftRecord {
+  id: string
+  local_date: string
+  start_time: string
+  end_time: string
+  location_id: string
+  activity_type_id: string
+  required_staff_count: number
+  notes: string | null
+  status: ShiftStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface ShiftAssignment {
+  id: string
+  shift_id: string
+  staff_id: string
+  assigned_at: string
+  removed_at: string | null
+}
