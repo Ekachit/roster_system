@@ -6,10 +6,12 @@ export interface Profile {
   full_name: string
   role: StaffRole
   is_active: boolean
+  email_matches: boolean
 }
 
 export interface StaffRecord extends Profile {
   supervisor_notes: string | null
+  is_linked: boolean
   location_ids?: string[]
   activity_type_ids?: string[]
 }

@@ -18,15 +18,21 @@ export function EmptyState({ title, children }: { title: string; children?: Reac
   return <div className="card text-center"><h2 className="font-semibold">{title}</h2>{children && <div className="mt-2 text-slate-600">{children}</div>}</div>
 }
 
-export function UnauthorisedState({ inactive = false }: { inactive?: boolean }) {
+export function UnauthorisedState({ reason = 'unapproved' }: { reason?: 'unapproved' | 'inactive' | 'email-mismatch' }) {
+  const heading = reason === 'inactive'
+    ? 'Account inactive'
+    : reason === 'email-mismatch'
+      ? 'Approved email mismatch'
+      : 'Access not approved'
+  const message = reason === 'inactive'
+    ? 'Your account has been deactivated. Contact your supervisor if you believe this is an error.'
+    : reason === 'email-mismatch'
+      ? 'Your current sign-in email no longer matches your approved staff email. Contact the system owner to complete the administrator unlink-and-relink process.'
+      : 'Your signed-in email is not linked to an approved staff profile. Ask your supervisor to approve it.'
   return (
     <div className="card mx-auto max-w-xl" role="alert">
-      <h1 className="text-2xl font-bold">{inactive ? 'Account inactive' : 'Access not approved'}</h1>
-      <p className="mt-2 text-slate-600">
-        {inactive
-          ? 'Your account has been deactivated. Contact your supervisor if you believe this is an error.'
-          : 'Your signed-in email is not linked to an approved staff profile. Ask your supervisor to approve it.'}
-      </p>
+      <h1 className="text-2xl font-bold">{heading}</h1>
+      <p className="mt-2 text-slate-600">{message}</p>
     </div>
   )
 }

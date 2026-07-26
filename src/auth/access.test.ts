@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Profile } from '../lib/types'
 import { resolveAccess } from './access'
 
-const employee: Profile = { id: 'employee', email: 'employee@example.test', full_name: 'Alex Example', role: 'employee', is_active: true }
+const employee: Profile = { id: 'employee', email: 'employee@example.test', full_name: 'Alex Example', role: 'employee', is_active: true, email_matches: true }
 const supervisor: Profile = { ...employee, id: 'supervisor', role: 'supervisor' }
 
 describe('resolveAccess', () => {
@@ -14,6 +14,9 @@ describe('resolveAccess', () => {
   })
   it('rejects inactive users', () => {
     expect(resolveAccess({ loading: false, authenticated: true, profile: { ...employee, is_active: false } })).toBe('inactive')
+  })
+  it('rejects a linked user whose Auth email no longer matches', () => {
+    expect(resolveAccess({ loading: false, authenticated: true, profile: { ...employee, email_matches: false } })).toBe('email-mismatch')
   })
   it('does not allow an employee through a supervisor boundary', () => {
     expect(resolveAccess({ loading: false, authenticated: true, profile: employee, requiredRole: 'supervisor' })).toBe('unauthorised')

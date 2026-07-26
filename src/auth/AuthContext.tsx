@@ -1,18 +1,8 @@
 import type { Session } from '@supabase/supabase-js'
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Profile } from '../lib/types'
-
-interface AuthState {
-  session: Session | null
-  profile: Profile | null
-  loading: boolean
-  error: string | null
-  refreshProfile: () => Promise<void>
-  signOut: () => Promise<void>
-}
-
-const AuthContext = createContext<AuthState | undefined>(undefined)
+import { AuthContext, type AuthState } from './auth-context'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
@@ -65,12 +55,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }), [error, loading, profile, refreshProfile, session])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-}
-
-// The hook intentionally lives beside its provider so the context remains private.
-// eslint-disable-next-line react-refresh/only-export-components
-export function useAuth() {
-  const context = useContext(AuthContext)
-  if (!context) throw new Error('useAuth must be used inside AuthProvider')
-  return context
 }

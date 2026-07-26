@@ -86,23 +86,43 @@ for each row execute function public.set_updated_at();
 
 create or replace function public.current_staff_id()
 returns uuid language sql stable security definer set search_path = '' as $$
-  select id from public.staff
-  where auth_user_id = auth.uid() and is_active
+  select s.id
+  from public.staff s
+  join auth.users u on u.id = s.auth_user_id
+  where s.auth_user_id = auth.uid()
+    and lower(trim(u.email)) = lower(trim(s.email::text))
+    and s.is_active
 $$;
 
 create or replace function public.is_supervisor()
 returns boolean language sql stable security definer set search_path = '' as $$
   select exists (
-    select 1 from public.staff
-    where auth_user_id = auth.uid() and is_active and role = 'supervisor'
+    select 1
+    from public.staff s
+    where s.id = public.current_staff_id()
+      and s.role = 'supervisor'
   )
 $$;
 
 create or replace function public.current_access_profile()
-returns table (id uuid, email text, full_name text, role public.staff_role, is_active boolean)
+returns table (
+  id uuid,
+  email text,
+  full_name text,
+  role public.staff_role,
+  is_active boolean,
+  email_matches boolean
+)
 language sql stable security definer set search_path = '' as $$
-  select s.id, s.email::text, s.full_name, s.role, s.is_active
+  select
+    s.id,
+    s.email::text,
+    s.full_name,
+    s.role,
+    s.is_active,
+    lower(trim(u.email)) = lower(trim(s.email::text)) as email_matches
   from public.staff s
+  join auth.users u on u.id = s.auth_user_id
   where s.auth_user_id = auth.uid()
 $$;
 
@@ -134,8 +154,13 @@ begin
   if old.role = 'supervisor' and old.is_active
      and (new.role <> 'supervisor' or not new.is_active)
      and not exists (
-       select 1 from public.staff s
-       where s.id <> old.id and s.role = 'supervisor' and s.is_active
+       select 1
+       from public.staff s
+       join auth.users u on u.id = s.auth_user_id
+       where s.id <> old.id
+         and s.role = 'supervisor'
+         and s.is_active
+         and lower(trim(u.email)) = lower(trim(s.email::text))
      ) then
     raise exception 'The last active supervisor cannot be demoted or deactivated';
   end if;
@@ -187,21 +212,29 @@ using (public.is_supervisor()) with check (public.is_supervisor());
 create view public.supervisor_staff_directory
 with (security_invoker = true, security_barrier = true) as
 select s.id, s.email::text as email, s.full_name, s.role, s.is_active,
+       s.auth_user_id is not null as is_linked,
        n.note as supervisor_notes
 from public.staff s
 left join public.staff_private_notes n on n.staff_id = s.id
 where public.is_supervisor();
 
-create or replace function public.save_staff_profile(
+create or replace function public.save_staff_configuration(
   p_staff_id uuid,
   p_email text,
   p_full_name text,
   p_role public.staff_role,
-  p_supervisor_notes text default null
+  p_supervisor_notes text,
+  p_location_ids uuid[],
+  p_activity_type_ids uuid[]
 ) returns uuid language plpgsql security definer set search_path = '' as $$
 declare
   v_staff_id uuid;
+  v_existing_email text;
+  v_is_linked boolean;
 begin
+  -- Serializes every command that can change supervisor role or active status.
+  -- A later statement in a waiting transaction sees the preceding commit.
+  lock table public.staff in share row exclusive mode;
   if not public.is_supervisor() then raise exception 'Supervisor access required'; end if;
   if length(trim(p_email)) = 0 or length(trim(p_full_name)) = 0 then
     raise exception 'Name and email are required';
@@ -211,14 +244,27 @@ begin
     values (lower(trim(p_email)), trim(p_full_name), p_role, public.current_staff_id())
     returning id into v_staff_id;
   else
+    select s.email::text, s.auth_user_id is not null
+    into v_existing_email, v_is_linked
+    from public.staff s
+    where s.id = p_staff_id;
+    if not found then raise exception 'Staff profile not found'; end if;
+    if v_is_linked and lower(trim(v_existing_email)) <> lower(trim(p_email)) then
+      raise exception 'A linked staff email cannot be changed; use the administrator unlink-and-relink procedure';
+    end if;
     update public.staff
     set email = lower(trim(p_email)), full_name = trim(p_full_name), role = p_role
     where id = p_staff_id returning id into v_staff_id;
-    if v_staff_id is null then raise exception 'Staff profile not found'; end if;
   end if;
   insert into public.staff_private_notes(staff_id, note)
   values (v_staff_id, nullif(trim(p_supervisor_notes), ''))
   on conflict (staff_id) do update set note = excluded.note;
+  delete from public.staff_locations where staff_id = v_staff_id;
+  insert into public.staff_locations(staff_id, location_id)
+  select v_staff_id, unnest(coalesce(p_location_ids, array[]::uuid[]));
+  delete from public.staff_activity_types where staff_id = v_staff_id;
+  insert into public.staff_activity_types(staff_id, activity_type_id)
+  select v_staff_id, unnest(coalesce(p_activity_type_ids, array[]::uuid[]));
   return v_staff_id;
 end;
 $$;
@@ -226,26 +272,10 @@ $$;
 create or replace function public.set_staff_active(p_staff_id uuid, p_is_active boolean)
 returns void language plpgsql security definer set search_path = '' as $$
 begin
+  lock table public.staff in share row exclusive mode;
   if not public.is_supervisor() then raise exception 'Supervisor access required'; end if;
   update public.staff set is_active = p_is_active where id = p_staff_id;
   if not found then raise exception 'Staff profile not found'; end if;
-end;
-$$;
-
-create or replace function public.set_staff_eligibility(
-  p_staff_id uuid,
-  p_location_ids uuid[],
-  p_activity_type_ids uuid[]
-) returns void language plpgsql security definer set search_path = '' as $$
-begin
-  if not public.is_supervisor() then raise exception 'Supervisor access required'; end if;
-  if not exists (select 1 from public.staff where id = p_staff_id) then raise exception 'Staff profile not found'; end if;
-  delete from public.staff_locations where staff_id = p_staff_id;
-  insert into public.staff_locations(staff_id, location_id)
-  select p_staff_id, unnest(coalesce(p_location_ids, array[]::uuid[]));
-  delete from public.staff_activity_types where staff_id = p_staff_id;
-  insert into public.staff_activity_types(staff_id, activity_type_id)
-  select p_staff_id, unnest(coalesce(p_activity_type_ids, array[]::uuid[]));
 end;
 $$;
 
@@ -261,12 +291,13 @@ grant select on public.supervisor_staff_directory to authenticated;
 revoke all on function public.current_staff_id() from public, anon;
 revoke all on function public.is_supervisor() from public, anon;
 revoke all on function public.current_access_profile() from public, anon;
-revoke all on function public.save_staff_profile(uuid, text, text, public.staff_role, text) from public, anon;
+revoke all on function public.save_staff_configuration(uuid, text, text, public.staff_role, text, uuid[], uuid[]) from public, anon;
 revoke all on function public.set_staff_active(uuid, boolean) from public, anon;
-revoke all on function public.set_staff_eligibility(uuid, uuid[], uuid[]) from public, anon;
+revoke all on function public.set_updated_at() from public, anon, authenticated;
+revoke all on function public.link_approved_auth_user() from public, anon, authenticated;
+revoke all on function public.protect_staff_invariants() from public, anon, authenticated;
 grant execute on function public.current_staff_id() to authenticated;
 grant execute on function public.is_supervisor() to authenticated;
 grant execute on function public.current_access_profile() to authenticated;
-grant execute on function public.save_staff_profile(uuid, text, text, public.staff_role, text) to authenticated;
+grant execute on function public.save_staff_configuration(uuid, text, text, public.staff_role, text, uuid[], uuid[]) to authenticated;
 grant execute on function public.set_staff_active(uuid, boolean) to authenticated;
-grant execute on function public.set_staff_eligibility(uuid, uuid[], uuid[]) to authenticated;

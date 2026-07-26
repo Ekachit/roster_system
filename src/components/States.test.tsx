@@ -12,7 +12,7 @@ describe('shared application states', () => {
   it('renders empty and inactive states', () => {
     const { rerender } = render(<EmptyState title="No staff" />)
     expect(screen.getByRole('heading', { name: 'No staff' })).toBeInTheDocument()
-    rerender(<UnauthorisedState inactive />)
+    rerender(<UnauthorisedState reason="inactive" />)
     expect(screen.getByRole('alert')).toHaveTextContent('Account inactive')
   })
 })
