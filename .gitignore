@@ -7,5 +7,5 @@ coverage/
 .DS_Store
 *.local
 .supabase/
-reference\AI Fitness Zone Roster.xlsx
+reference/AI Fitness Zone Roster.xlsx
 
