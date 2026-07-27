@@ -15,13 +15,16 @@ The employee dashboard now shows:
   or no future shift.
 
 `/employee/schedule` provides a responsive grouped weekly list with previous and
-next week navigation. Each assignment shows its date, Melbourne wall-clock
-start/end, location, activity, assignment status, and acknowledgement state.
+next week navigation plus a separate cancelled-shift history. Each assignment
+shows its title, date, Melbourne wall-clock start/end, location, activity,
+regular/shadowing kind, assignment status, and acknowledgement state.
 
 `/employee/shifts/:shiftId` shows the full employee-visible shift detail,
-including notes, assignment kind, other active assigned staff names, and the
-current acknowledgement state. A stale, removed, draft, cancelled, unrelated,
-or otherwise inaccessible link fails closed with an unavailable state.
+including notes, assignment kind, permitted colleague names, and the current
+acknowledgement state. Employees can reopen their own cancelled assignment
+details, but cancellation is clearly marked and acknowledgement is disabled.
+A stale, removed, draft, unrelated, or otherwise inaccessible link fails closed
+with an unavailable state.
 
 ## RLS and database changes
 
@@ -43,10 +46,26 @@ Migration `202607270003_milestone_4_employee_schedule.sql` adds:
 - server-side `ASSIGNMENT_ACKNOWLEDGED` and
   `ASSIGNMENT_ACKNOWLEDGEMENTS_RESET` roster audit events.
 
+Hardening migration `202607270004_milestone_4_hardening.sql`:
+
+- revokes authenticated `SELECT` on the `shifts` and `shift_assignments` base
+  tables, preventing employees from selecting internal actor, override,
+  removal, publication, or cancellation columns through PostgREST;
+- removes the employee base-table RLS policies as defence in depth;
+- adds supervisor-only `supervisor_roster_shifts(date,date)` and
+  `supervisor_roster_assignments()` projections so the supervisor roster
+  continues to work without broad base-table grants;
+- extends `employee_schedule()` with only approved employee-facing fields,
+  shift status, assignment status, cancellation time, and own cancelled history;
+- retains published rows only for active assignments and cancelled rows only
+  for the employee's own historical assignments.
+
 Employees retain no direct insert/update/delete grant on shifts, assignments,
-acknowledgements, or audit records. Draft and cancelled shifts, removed
-assignments, unrelated assignments, availability, private notes, and supervisor
-notes are not returned by the employee schedule contract.
+acknowledgements, or audit records and no direct select grant on the shift or
+assignment base tables. Draft shifts, unrelated assignments, removed active
+assignments, availability, private notes, supervisor notes, override evidence,
+and internal actor identifiers are not returned by the employee schedule
+contract.
 
 ## Pages and components
 
@@ -59,12 +78,16 @@ notes are not returned by the employee schedule contract.
 - Employee routes in `src/App.tsx`.
 - `My Schedule` employee navigation in `src/components/AppShell.tsx`.
 - Employee schedule response type in `src/lib/types.ts`.
+- Supervisor roster data loading in `src/pages/RosterPage.tsx` now uses the
+  supervisor-only projections.
 
 ## Acknowledgement rules
 
 - Only the employee who owns an active assignment on a currently published
   shift can acknowledge it.
 - Removed assignments and cancelled/draft shifts cannot be acknowledged.
+- Cancelled assignments remain readable as history but show acknowledgement as
+  not required; any pre-cancellation acknowledgement timestamp is retained.
 - Another employee's assignment cannot be acknowledged.
 - Repeated calls return the original timestamp, create no duplicate row, and
   create only one acknowledgement audit event.
@@ -77,23 +100,49 @@ notes are not returned by the employee schedule contract.
 
 Final verification on 27 July 2026:
 
-- `supabase db reset` — exit 0; all four migrations and synthetic seed applied
+- `supabase db reset` — exit 0; all five migrations and synthetic seed applied
   from scratch.
-- `supabase test db` — exit 0; 4 SQL files and **121 assertions passed**.
+- `supabase test db` — exit 0; 4 SQL files and **127 assertions passed**.
 - `npm run lint` — exit 0; no warnings or errors.
 - `npm run typecheck` — exit 0; strict TypeScript project build passed.
-- `npm run test` — exit 0; 6 files and **37 tests passed**.
+- `npm run test` — exit 0; 6 files and **38 tests passed**.
+- `powershell -NoProfile -ExecutionPolicy Bypass -File
+  supabase/tests/concurrent_acknowledgement.ps1` — exit 0; two genuine
+  concurrent sessions both succeeded and produced exactly one acknowledgement
+  row and one audit event.
+- `powershell -NoProfile -ExecutionPolicy Bypass -File
+  supabase/tests/run_m4_browser.ps1` — exit 0; **3 Playwright tests passed** in
+  installed headless Microsoft Edge in 1.1 minutes.
+- `powershell -NoProfile -ExecutionPolicy Bypass -File
+  supabase/tests/run_m3_browser.ps1` — exit 0; **2 supervisor/mobile regression
+  tests passed** in installed headless Microsoft Edge in 1.6 minutes.
 - `npm run build` — exit 0; 102 modules transformed and production assets
-  emitted. Vite reported a non-failing 501.12 kB chunk-size warning.
+  emitted. Vite reported a non-failing 502.82 kB chunk-size warning.
 
 SQL coverage proves own published visibility, unrelated employee isolation,
-draft isolation, removed/cancelled exclusion, own acknowledgement, denial for
-another employee, denial for removed/cancelled assignments, idempotency and one
-audit event, co-worker name projection, and direct shift mutation denial.
+draft isolation, removed active-assignment exclusion, cancelled history access,
+own acknowledgement, denial for another employee, denial for removed/cancelled
+acknowledgement, idempotency and one audit event, constrained co-worker names,
+Saturday and Sunday schedules, exact titles and regular/shadowing kinds, direct
+base-table denial, supervisor projection denial, and direct shift mutation
+denial.
 
-The component test renders the employee schedule card inside a 320 px container
-and verifies date/time, location, activity, assignment state, acknowledgement
-state, and the touch-friendly full-width mobile details action.
+The component tests render published and cancelled schedule cards inside a
+320 px container and verify weekend date, title, time, location, activity,
+regular/shadowing kind, status, acknowledgement state, and the touch-friendly
+full-width details action.
+
+The Milestone 4 browser suite verifies:
+
+- desktop dashboard, schedule, active detail, and cancelled detail at
+  1440 × 1000;
+- exact shift titles and regular/shadowing kinds in all three employee views;
+- Saturday and Sunday cards;
+- cancelled history/detail access and absence of its acknowledgement action;
+- active acknowledgement followed by reload persistence;
+- mobile layout at 390 × 844 with no document-level horizontal overflow;
+- authenticated direct PostgREST requests for internal shift and assignment
+  columns return permission-denied responses and no internal actor ID.
 
 ## Known limitations
 
@@ -101,22 +150,25 @@ state, and the touch-friendly full-width mobile details action.
   for mobile readability.
 - Shift times remain same-day Melbourne wall-clock values; overnight shifts are
   outside the approved MVP architecture.
-- No browser automation was added for Milestone 4; database permission tests
-  and the 320 px responsive component test cover the requested acceptance
-  paths. Actual-device verification remains on the manual checklist.
 - The production bundle has a non-failing Vite chunk-size warning. Code
   splitting is deferred because it is not required for this small internal
   milestone.
+- Browser verification used installed headless Microsoft Edge at real desktop
+  and mobile viewport sizes; it did not use physical mobile hardware.
 
 ## Manual verification checklist
 
-- [ ] Sign in as a synthetic employee with an active published assignment.
-- [ ] Confirm the dashboard next shift, current-week list, and outstanding
+- [x] Sign in as a synthetic employee with active published assignments.
+- [x] Confirm the dashboard next shift, current-week list, and outstanding
       acknowledgement count.
-- [ ] Navigate previous and next weeks at desktop width.
-- [ ] Repeat schedule and detail checks at approximately 320–390 px width.
-- [ ] Open shift detail and confirm notes plus colleague names are correct.
-- [ ] Acknowledge the shift and confirm the timestamp and dashboard count update.
-- [ ] Refresh and repeat acknowledgement to confirm the original state remains.
-- [ ] Confirm a draft, cancelled, removed, and unrelated shift URL fails closed.
-- [ ] Confirm employee navigation exposes no supervisor roster controls.
+- [x] Verify exact titles and regular/shadowing kinds on dashboard, schedule,
+      and detail views.
+- [x] Verify Saturday and Sunday schedule cards at desktop and mobile widths.
+- [x] Repeat schedule and detail checks at 390 px width without horizontal
+      overflow.
+- [x] Open active shift detail and confirm notes plus colleague names are correct.
+- [x] Open cancelled history detail and confirm acknowledgement is disabled.
+- [x] Acknowledge an active shift and confirm the timestamp persists after reload.
+- [x] Confirm authenticated PostgREST base-table requests for internal columns
+      fail with permission denied.
+- [x] Confirm employee navigation exposes no supervisor roster controls.

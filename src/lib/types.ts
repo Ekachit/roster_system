@@ -64,7 +64,9 @@ export interface EmployeeScheduleItem {
   activity_name: string
   notes: string | null
   assignment_kind: AssignmentKind
-  assignment_status: 'ASSIGNED'
+  assignment_status: 'ASSIGNED' | 'CANCELLED' | 'REMOVED'
+  shift_status: ShiftStatus
   acknowledged_at: string | null
+  cancelled_at: string | null
   colleague_names: string[]
 }

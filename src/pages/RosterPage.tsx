@@ -71,8 +71,8 @@ export function RosterPage() {
     setLoading(true)
     const end = addDays(week, 6)
     const [shiftRows, assignmentRows, people, placeRows, activityRows] = await Promise.all([
-      supabase.from('shifts').select('*').gte('local_date', week).lte('local_date', end).order('local_date').order('start_time'),
-      supabase.from('shift_assignments').select('*').is('removed_at', null),
+      supabase.rpc('supervisor_roster_shifts', { p_start_date: week, p_end_date: end }),
+      supabase.rpc('supervisor_roster_assignments'),
       supabase.from('supervisor_staff_directory').select('*').order('full_name'),
       supabase.from('locations').select('*').order('name'),
       supabase.from('activity_types').select('*').order('name'),
@@ -84,7 +84,7 @@ export function RosterPage() {
       return [shift.id, (result.data as Staffing[] | null)?.[0]] as const
     }))
     setStaffing(Object.fromEntries(staffingRows.filter((entry): entry is readonly [string, Staffing] => Boolean(entry[1]))))
-    setAssignments((assignmentRows.data as ShiftAssignment[] | null) ?? [])
+    setAssignments(((assignmentRows.data as ShiftAssignment[] | null) ?? []).filter((item) => item.removed_at === null))
     setStaff((people.data as StaffRecord[] | null) ?? [])
     setLocations((placeRows.data as ReferenceRecord[] | null) ?? [])
     setActivities((activityRows.data as ReferenceRecord[] | null) ?? [])

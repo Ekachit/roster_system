@@ -13,22 +13,24 @@ import type { EmployeeScheduleItem } from '../lib/types'
 import { useEmployeeSchedule } from './useEmployeeSchedule'
 
 export function ScheduleCard({ item }: { item: EmployeeScheduleItem }) {
+  const cancelled = item.shift_status === 'CANCELLED'
   return (
-    <article className="card" data-testid="schedule-card">
+    <article className={`card ${cancelled ? 'border-slate-300 bg-slate-100' : ''}`} data-testid="schedule-card">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-sm font-medium text-blue-800">{displayScheduleDate(item.local_date)}</p>
           <h2 className="mt-1 text-lg font-semibold">{item.shift_title}</h2>
         </div>
-        <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-900">
-          {item.assignment_status === 'ASSIGNED' ? 'Assigned' : item.assignment_status}
+        <span className={`rounded-full px-2 py-1 text-xs font-semibold ${cancelled ? 'bg-slate-200 text-slate-800' : 'bg-blue-50 text-blue-900'}`}>
+          {cancelled ? 'Cancelled' : 'Assigned'}
         </span>
       </div>
       <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
         <div><dt className="text-slate-500">Time</dt><dd className="font-medium">{displayScheduleTime(item.start_time)}–{displayScheduleTime(item.end_time)}</dd></div>
         <div><dt className="text-slate-500">Location</dt><dd className="font-medium">{item.location_name}</dd></div>
         <div><dt className="text-slate-500">Activity</dt><dd className="font-medium">{item.activity_name}</dd></div>
-        <div><dt className="text-slate-500">Acknowledgement</dt><dd className="font-medium">{item.acknowledged_at ? 'Acknowledged' : 'Outstanding'}</dd></div>
+        <div><dt className="text-slate-500">Assignment kind</dt><dd className="font-medium">{item.assignment_kind === 'SHADOWING' ? 'Shadowing' : 'Regular'}</dd></div>
+        <div><dt className="text-slate-500">Acknowledgement</dt><dd className="font-medium">{cancelled ? 'Not required' : item.acknowledged_at ? 'Acknowledged' : 'Outstanding'}</dd></div>
       </dl>
       <Link className="button-secondary mt-4 w-full sm:w-auto" to={`/employee/shifts/${item.shift_id}`}>View shift details</Link>
     </article>
@@ -41,14 +43,18 @@ export function EmployeeSchedulePage() {
   const { items, loading, error, load } = useEmployeeSchedule()
   const weekEnd = addScheduleDays(week, 6)
   const visible = useMemo(
-    () => items.filter((item) => item.local_date >= week && item.local_date <= weekEnd),
+    () => items.filter((item) => item.shift_status === 'PUBLISHED' && item.local_date >= week && item.local_date <= weekEnd),
     [items, week, weekEnd],
+  )
+  const cancelled = useMemo(
+    () => items.filter((item) => item.shift_status === 'CANCELLED').reverse(),
+    [items],
   )
 
   return (
     <div>
       <h1 className="text-3xl font-bold">My Schedule</h1>
-      <p className="mt-2 text-slate-600">Published shifts assigned to you. Times use Australia/Melbourne.</p>
+      <p className="mt-2 text-slate-600">Your published schedule and cancelled-shift history. Times use Australia/Melbourne.</p>
       <div className="card mt-6 flex flex-wrap items-center justify-between gap-3">
         <button className="button-secondary" onClick={() => setWeek(addScheduleDays(week, -7))}>Previous week</button>
         <strong>{displayScheduleDate(week, true)} – {displayScheduleDate(weekEnd, true)}</strong>
@@ -59,6 +65,13 @@ export function EmployeeSchedulePage() {
           : visible.length === 0
             ? <div className="mt-6"><EmptyState title="No published shifts this week">Use previous or next week to check another week.</EmptyState></div>
             : <div className="mt-6 grid gap-4 md:grid-cols-2">{visible.map((item) => <ScheduleCard item={item} key={item.assignment_id} />)}</div>}
+      {!loading && !error && <section className="mt-10" aria-labelledby="cancelled-history-heading">
+        <h2 className="text-2xl font-bold" id="cancelled-history-heading">Cancelled shift history</h2>
+        <p className="mt-1 text-slate-600">Cancelled assignments remain available for reference and cannot be acknowledged.</p>
+        {cancelled.length === 0
+          ? <div className="mt-4"><EmptyState title="No cancelled shifts" /></div>
+          : <div className="mt-4 grid gap-4 md:grid-cols-2">{cancelled.map((item) => <ScheduleCard item={item} key={item.assignment_id} />)}</div>}
+      </section>}
     </div>
   )
 }
@@ -86,25 +99,29 @@ export function EmployeeShiftDetailsPage() {
 
   if (loading) return <LoadingState label="Loading shift details…" />
   if (error) return <ErrorState message={error} retry={() => void load()} />
-  if (!item) return <EmptyState title="Shift unavailable"><p>This shift is no longer active and published, or it is not assigned to you.</p><button className="button-secondary mt-4" onClick={() => navigate('/employee/schedule')}>Back to My Schedule</button></EmptyState>
+  if (!item) return <EmptyState title="Shift unavailable"><p>This shift is no longer available, or it was never assigned to you.</p><button className="button-secondary mt-4" onClick={() => navigate('/employee/schedule')}>Back to My Schedule</button></EmptyState>
 
+  const cancelled = item.shift_status === 'CANCELLED'
   return (
     <div>
       <Link className="text-sm font-semibold text-blue-800 hover:underline" to="/employee/schedule">← My Schedule</Link>
       <div className="card mt-4">
+        {cancelled && <p className="mb-4 rounded-lg bg-slate-200 p-3 font-semibold text-slate-900" role="status">This shift was cancelled. It remains visible as schedule history.</p>}
         <p className="text-sm font-medium text-blue-800">{displayScheduleDate(item.local_date, true)}</p>
         <h1 className="mt-1 text-3xl font-bold">{item.shift_title}</h1>
         <dl className="mt-6 grid gap-4 sm:grid-cols-2">
           <div><dt className="text-sm text-slate-500">Time</dt><dd className="font-medium">{displayScheduleTime(item.start_time)}–{displayScheduleTime(item.end_time)}</dd></div>
           <div><dt className="text-sm text-slate-500">Location</dt><dd className="font-medium">{item.location_name}</dd></div>
           <div><dt className="text-sm text-slate-500">Activity</dt><dd className="font-medium">{item.activity_name}</dd></div>
-          <div><dt className="text-sm text-slate-500">Assignment status</dt><dd className="font-medium">Assigned ({item.assignment_kind === 'SHADOWING' ? 'shadowing' : 'regular'})</dd></div>
+          <div><dt className="text-sm text-slate-500">Assignment status</dt><dd className="font-medium">{cancelled ? 'Cancelled' : 'Assigned'} ({item.assignment_kind === 'SHADOWING' ? 'shadowing' : 'regular'})</dd></div>
           <div className="sm:col-span-2"><dt className="text-sm text-slate-500">Notes</dt><dd className="font-medium">{item.notes?.trim() || 'No notes provided.'}</dd></div>
           <div className="sm:col-span-2"><dt className="text-sm text-slate-500">Other assigned staff</dt><dd className="font-medium">{item.colleague_names.length ? item.colleague_names.join(', ') : 'No other staff assigned.'}</dd></div>
         </dl>
         <section className="mt-6 border-t pt-5" aria-labelledby="acknowledgement-heading">
           <h2 className="text-lg font-semibold" id="acknowledgement-heading">Acknowledgement</h2>
-          {item.acknowledged_at
+          {cancelled
+            ? <p className="mt-2 text-slate-700">{item.acknowledged_at ? 'This assignment was acknowledged before cancellation.' : 'Acknowledgement is not required for a cancelled shift.'}</p>
+            : item.acknowledged_at
             ? <p className="mt-2 text-green-800">Acknowledged {new Intl.DateTimeFormat('en-AU', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Australia/Melbourne' }).format(new Date(item.acknowledged_at))}.</p>
             : <><p className="mt-2 text-slate-600">Confirm that you have seen this assignment.</p><button className="button mt-4" disabled={saving} onClick={() => void acknowledge()}>{saving ? 'Acknowledging…' : 'Acknowledge shift'}</button></>}
           {actionError && <p className="mt-3 text-red-800" role="alert">{actionError}</p>}

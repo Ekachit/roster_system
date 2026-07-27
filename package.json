@@ -10,6 +10,7 @@
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "test:browser:m3": "playwright test tests/milestone_3_browser.spec.ts",
+    "test:browser:m4": "playwright test tests/milestone_4_browser.spec.ts",
     "test:watch": "vitest",
     "db:test": "supabase test db"
   },

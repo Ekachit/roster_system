@@ -43,8 +43,8 @@ select lives_ok($$
     (select id from public.locations where name='Clayton'),
     (select id from public.activity_types where name='Training'),2,'Synthetic test shift'))
 $$,'supervisor creates a shift');
-select is((select required_staff_count from public.shifts where id=(select id from roster_ids where key='shift1')),2,'required staff count is stored');
-select is((select shift_title from public.shifts where id=(select id from roster_ids where key='shift1')),'Training coverage','required shift title is stored');
+select is((select required_staff_count from public.supervisor_roster_shifts(null,null) where id=(select id from roster_ids where key='shift1')),2,'required staff count is stored');
+select is((select shift_title from public.supervisor_roster_shifts(null,null) where id=(select id from roster_ids where key='shift1')),'Training coverage','required shift title is stored');
 select is((select details->>'shift_title' from public.roster_audit where action='SHIFT_CREATED' and shift_id=(select id from roster_ids where key='shift1')),'Training coverage','shift title is audited');
 select throws_ok($$select public.save_shift(null,'Bad time','2026-08-03','13:00','10:00',
   (select id from public.locations where name='Clayton'),(select id from public.activity_types where name='Training'),1,null)$$,
@@ -86,8 +86,8 @@ select lives_ok($$select public.set_shift_status((select id from roster_ids wher
 select lives_ok($$select public.replace_employee((select id from roster_ids where key='assignment2'),
   '22000000-0000-0000-0000-000000000004','SHADOWING',true,'Exception reviewed with employee','Coverage changed')$$,
   'replacement succeeds transactionally with override');
-select ok((select removed_at is not null and replaced_by_assignment_id is not null from public.shift_assignments where id=(select id from roster_ids where key='assignment2')),'replaced assignment history is preserved');
-select is((select assignment_kind::text from public.shift_assignments where id=(select replaced_by_assignment_id from public.shift_assignments where id=(select id from roster_ids where key='assignment2'))),'SHADOWING','replacement preserves the selected shadowing kind');
+select ok((select removed_at is not null and replaced_by_assignment_id is not null from public.supervisor_roster_assignments() where id=(select id from roster_ids where key='assignment2')),'replaced assignment history is preserved');
+select is((select assignment_kind::text from public.supervisor_roster_assignments() where id=(select replaced_by_assignment_id from public.supervisor_roster_assignments() where id=(select id from roster_ids where key='assignment2'))),'SHADOWING','replacement preserves the selected shadowing kind');
 select throws_ok($$select public.save_shift(null,'Spring gap','2026-10-04','02:10','03:10',
   (select id from public.locations where name='Clayton'),(select id from public.activity_types where name='Training'),1,null)$$,
   'Invalid shift time','nonexistent Melbourne spring-forward Sunday boundary is rejected');
@@ -96,11 +96,11 @@ select lives_ok($$select public.save_shift(null,'Autumn repeat','2026-04-05','02
   'repeated Melbourne fall-back Sunday boundary is accepted');
 select lives_ok($$select public.copy_shift((select id from roster_ids where key='shift1'),'2026-08-09')$$,
   'shift copies to Sunday');
-select is((select count(*) from public.shifts where local_date='2026-08-09' and shift_title='Training coverage'),1::bigint,'Sunday copy retains shift title');
+select is((select count(*) from public.supervisor_roster_shifts(null,null) where local_date='2026-08-09' and shift_title='Training coverage'),1::bigint,'Sunday copy retains shift title');
 
 select set_config('request.jwt.claim.sub','12000000-0000-0000-0000-000000000002',true);
-select is((select count(*) from public.shifts),1::bigint,'employee reads only a shift containing their active published assignment');
-select is((select count(*) from public.shift_assignments),1::bigint,'employee reads only own active published assignment');
+select throws_like($$select count(*) from public.shifts$$,'permission denied for table shifts','employee cannot read the shift base table');
+select throws_like($$select count(*) from public.shift_assignments$$,'permission denied for table shift_assignments','employee cannot read the assignment base table');
 select throws_like($$select public.save_shift(null,'Not allowed','2026-08-03','09:00','10:00',
   (select id from public.locations limit 1),(select id from public.activity_types limit 1),1,null)$$,
   'Supervisor access required','employee cannot create a shift');
