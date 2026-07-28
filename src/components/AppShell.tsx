@@ -22,6 +22,7 @@ export function AppShell() {
               <NavLink className={linkClass} to="/supervisor/roster">Roster</NavLink>
               <NavLink className={linkClass} to="/supervisor/release-requests">Requests</NavLink>
               <NavLink className={linkClass} to="/supervisor/audit">Audit</NavLink>
+              <NavLink className={linkClass} to="/supervisor/reports/hours">Reports</NavLink>
               <NavLink className={linkClass} to="/supervisor/locations">Locations</NavLink>
               <NavLink className={linkClass} to="/supervisor/activity-types">Activities</NavLink>
             </>}

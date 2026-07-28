@@ -30,6 +30,14 @@ export function scheduleWeekStart(date: string) {
   return addScheduleDays(date, 1 - (value.getUTCDay() || 7))
 }
 
+export function melbourneScheduleWeek(now = new Date()) {
+  const startDate = scheduleWeekStart(todayMelbourne(now))
+  return {
+    startDate,
+    endDate: addScheduleDays(startDate, 6),
+  }
+}
+
 export function displayScheduleDate(date: string, includeYear = false) {
   return new Intl.DateTimeFormat('en-AU', {
     timeZone: ROSTER_TIME_ZONE,

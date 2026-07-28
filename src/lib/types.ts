@@ -140,3 +140,21 @@ export interface AuditHistoryRecord {
   details: Record<string, unknown>
   created_at: string
 }
+
+export interface ScheduledHoursRow {
+  assignment_id: string
+  staff_id: string
+  employee_name: string
+  employee_email: string
+  shift_id: string
+  local_date: string
+  start_time: string
+  end_time: string
+  duration_minutes: number
+  location_id: string
+  location_name: string
+  activity_type_id: string
+  activity_name: string
+  shift_status: 'PUBLISHED'
+  assignment_status: 'ASSIGNED'
+}

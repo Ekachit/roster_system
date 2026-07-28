@@ -11,6 +11,7 @@ import { RosterPage } from './pages/RosterPage'
 import { EmployeeSchedulePage, EmployeeShiftDetailsPage } from './pages/EmployeeSchedulePage'
 import { EmployeeReleaseRequestsPage, SupervisorReleaseRequestsPage } from './pages/ReleaseRequestsPage'
 import { AuditHistoryPage } from './pages/AuditHistoryPage'
+import { ScheduledHoursPage } from './pages/ScheduledHoursPage'
 
 export function App() {
   return (
@@ -37,6 +38,7 @@ export function App() {
                 <Route path="supervisor/roster" element={<RosterPage />} />
                 <Route path="supervisor/release-requests" element={<SupervisorReleaseRequestsPage />} />
                 <Route path="supervisor/audit" element={<AuditHistoryPage />} />
+                <Route path="supervisor/reports/hours" element={<ScheduledHoursPage />} />
                 <Route path="supervisor/locations" element={<ReferenceManagementPage table="locations" title="Locations" />} />
                 <Route path="supervisor/activity-types" element={<ReferenceManagementPage table="activity_types" title="Activity types" />} />
               </Route>
