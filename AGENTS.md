@@ -18,3 +18,4 @@
   issues. Include PowerShell commands where they differ from Unix commands.
 - Prefer small, maintainable solutions for an internal application of about
   ten users.
+-Always maintain an md file of every bug/review made and always review the document when encountering specific bug.

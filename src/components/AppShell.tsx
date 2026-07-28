@@ -20,11 +20,14 @@ export function AppShell() {
               <NavLink className={linkClass} to="/supervisor/staff">Staff</NavLink>
               <NavLink className={linkClass} to="/supervisor/availability">Availability</NavLink>
               <NavLink className={linkClass} to="/supervisor/roster">Roster</NavLink>
+              <NavLink className={linkClass} to="/supervisor/release-requests">Requests</NavLink>
+              <NavLink className={linkClass} to="/supervisor/audit">Audit</NavLink>
               <NavLink className={linkClass} to="/supervisor/locations">Locations</NavLink>
               <NavLink className={linkClass} to="/supervisor/activity-types">Activities</NavLink>
             </>}
             {!supervisor && <>
               <NavLink className={linkClass} to="/employee/schedule">My Schedule</NavLink>
+              <NavLink className={linkClass} to="/employee/requests">Requests</NavLink>
               <NavLink className={linkClass} to="/employee/availability">Availability</NavLink>
             </>}
             <NavLink className={linkClass} to="/profile">Profile</NavLink>

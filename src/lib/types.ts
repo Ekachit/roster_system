@@ -70,3 +70,73 @@ export interface EmployeeScheduleItem {
   cancelled_at: string | null
   colleague_names: string[]
 }
+
+export type ReleaseRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
+
+export interface ReleaseRequestAssignment {
+  assignment_id: string
+  shift_id: string
+  shift_title: string
+  local_date: string
+  start_time: string
+  end_time: string
+  location_name: string
+  activity_name: string
+  assignment_kind: AssignmentKind
+}
+
+export interface EmployeeReleaseRequest {
+  request_id: string
+  assignment_id: string
+  shift_id: string
+  shift_title: string
+  local_date: string
+  start_time: string
+  end_time: string
+  location_name: string
+  activity_name: string
+  assignment_kind: AssignmentKind
+  reason: string
+  note: string | null
+  status: ReleaseRequestStatus
+  submitted_at: string
+  resolved_at: string | null
+  resolution_reason: string | null
+}
+
+export interface SupervisorReleaseRequest extends EmployeeReleaseRequest {
+  staff_id: string
+  employee_name: string
+  assignment_active: boolean
+  shift_status: ShiftStatus
+  resolved_by_name: string | null
+  replacement_assignment_id: string | null
+}
+
+export interface ReleaseCandidate {
+  staff_id: string
+  full_name: string
+  conflicts: Array<{ code: string; message: string; overridable: boolean }>
+  fully_available: boolean
+  eligible: boolean
+  assignable_without_override: boolean
+}
+
+export interface AuditHistoryRecord {
+  audit_id: number
+  actor_staff_id: string
+  actor_name: string
+  action: string
+  entity_type: string
+  entity_id: string | null
+  shift_id: string | null
+  assignment_id: string | null
+  release_request_id: string | null
+  subject_staff_id: string | null
+  subject_name: string | null
+  reason: string | null
+  before_data: Record<string, unknown>
+  after_data: Record<string, unknown>
+  details: Record<string, unknown>
+  created_at: string
+}

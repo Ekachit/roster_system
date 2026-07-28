@@ -11,8 +11,10 @@
     "test": "vitest run",
     "test:browser:m3": "playwright test tests/milestone_3_browser.spec.ts",
     "test:browser:m4": "playwright test tests/milestone_4_browser.spec.ts",
+    "test:browser:m5": "playwright test tests/milestone_5_browser.spec.ts",
     "test:watch": "vitest",
-    "db:test": "supabase test db"
+    "db:test": "supabase test db",
+    "db:test:concurrency": "powershell -NoProfile -ExecutionPolicy Bypass -File supabase/tests/concurrent_release_requests.ps1"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.52.1",
