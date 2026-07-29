@@ -9,4 +9,5 @@ playwright-report/
 .DS_Store
 *.local
 .supabase/
+supabase/.temp/
 reference/AI Fitness Zone Roster.xlsx

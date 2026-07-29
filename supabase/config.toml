@@ -10,7 +10,7 @@ max_rows = 1000
 [db]
 port = 55322
 shadow_port = 55320
-major_version = 15
+major_version = 17
 
 [studio]
 enabled = true
@@ -33,6 +33,6 @@ smtp_port = 55325
 pop3_port = 55326
 
 [analytics]
-enabled = true
+enabled = false
 port = 55327
 backend = "postgres"

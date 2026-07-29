@@ -29,7 +29,7 @@ export function SignInPage() {
         <p className="mt-2 text-slate-600">Access is limited to staff approved by a supervisor. There is no public registration.</p>
         {!env.isConfigured && <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900" role="alert">Supabase environment variables are not configured.</p>}
         {message && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-900" role="alert">{message}</p>}
-        <label className="mt-6 block font-medium">Email<input className="field" type="email" autoComplete="email" required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+        <label className="mt-6 block font-medium">Email<input className="field" type="email" autoComplete="email" maxLength={320} required value={email} onChange={(event) => setEmail(event.target.value)} /></label>
         <label className="mt-4 block font-medium">Password<input className="field" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>
         <button className="button mt-6 w-full" disabled={submitting || !env.isConfigured}>{submitting ? 'Signing in…' : 'Sign in'}</button>
       </form>

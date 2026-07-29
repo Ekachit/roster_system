@@ -2,9 +2,16 @@
 
 ## Status and scope
 
-This document completes the architecture portion of Milestone 0. It is a
-recommendation, not an implementation. No application code, Supabase project,
-or Netlify site has been created.
+This document records the implemented MVP architecture through Milestone 7.
+The React application, versioned Supabase migrations, RLS/security tests,
+complete local end-to-end workflow, production build controls, and Netlify
+configuration are present in the repository.
+
+No hosted Supabase project or Netlify site was available during the initial
+Milestone 7 implementation review. The production Supabase target was later
+owner-provisioned; migration push, authentication setup, Netlify deployment,
+and live URL smoke tests remain controlled release steps documented in
+`docs/NETLIFY_DEPLOYMENT.md`.
 
 ## Product understanding
 
@@ -39,9 +46,28 @@ The most important domain rules are:
 Supabase PostgreSQL is the source of truth. The workbook is an input for
 possible one-time seed data only, never a runtime dependency.
 
-## Repository inspection
+## Current implementation
 
-Inspection on 26 July 2026 found:
+The implementation uses:
+
+- React 19, Vite, strict TypeScript, Tailwind CSS, and React Router;
+- Supabase Auth with email/password, no public registration, and approved staff
+  linkage by normalized email;
+- PostgreSQL tables, RLS, constraints, triggers, and scoped
+  `SECURITY DEFINER` functions with fixed empty `search_path`;
+- local wall-clock `date`/`time` roster values interpreted only in
+  `Australia/Melbourne`;
+- Vitest/Testing Library, pgTAP, PowerShell concurrency tests, and Playwright;
+- a static `dist` deployment configured by `netlify.toml`, without Netlify
+  Functions.
+
+The browser receives only the Supabase Project URL and publishable/legacy anon
+key. RLS and database commands remain authoritative even if a user bypasses the
+React route guard.
+
+## Milestone 0 repository inspection (historical)
+
+The original inspection on 26 July 2026 found:
 
 - `docs/PRODUCT_REQUIREMENTS.md`, which is the only populated project file;
 - an initialised Git repository on `main` with no commits;
@@ -124,16 +150,16 @@ Static production build
 
 ### Frontend
 
-Use a Vite React TypeScript single-page application with:
+The Vite React TypeScript single-page application uses:
 
 - React Router for public, employee, and supervisor route boundaries;
-- TanStack Query for server-state caching and invalidation;
-- React Hook Form plus Zod for accessible forms and immediate validation;
+- small page-local hooks for server state at the approximately ten-user scale;
+- native accessible forms with immediate client validation and authoritative
+  database validation;
 - Tailwind CSS for responsive presentation;
 - `@supabase/supabase-js` for authentication and database access;
 - Vitest and React Testing Library for unit/component tests;
-- Playwright only for a small, high-value browser smoke suite if it fits the
-  free CI budget.
+- Playwright for a small complete-MVP workflow and milestone regressions.
 
 Client route guards improve navigation but are not security controls. Every
 data permission and protected mutation must also be enforced in PostgreSQL.
@@ -167,9 +193,8 @@ Use this provider-neutral flow:
 4. Every application RLS policy requires a linked, active staff record.
 5. Unapproved or inactive accounts receive no application data access.
 
-Email/password is the provisional lowest-complexity assumption; Google OAuth
-or magic links must not be added unless the supervisor confirms the method and
-its operational setup. A browser must never call Supabase Auth admin APIs.
+Email/password is the implemented MVP method. Google OAuth, magic links, public
+registration, and browser Auth admin APIs are not used.
 
 Email comparison should use `lower(trim(email))`. Changing an approved email
 after Auth linkage should be a deliberate workflow, not a normal profile edit.
@@ -178,13 +203,15 @@ after Auth linkage should be a deliberate workflow, not a normal profile edit.
 
 The business timezone is `Australia/Melbourne`.
 
-- Store actual shift boundaries as `timestamptz` UTC instants.
-- Convert to/from Melbourne local time at the UI and database command boundary.
+- Store each same-day shift as `local_date`, `start_time`, and `end_time`
+  because the roster is Melbourne wall-clock intent.
 - Store recurring availability as local weekday plus `time` values because it
   represents a wall-clock rule.
 - Store date-specific availability as Melbourne `date` plus local `time`.
-- Calculate shift duration from UTC instants so daylight-saving transitions
-  are correct.
+- Validate shift boundaries by round-tripping through the Melbourne timezone;
+  nonexistent spring-forward local times are rejected.
+- Calculate report duration by converting both local boundaries to Melbourne
+  instants before subtraction, so daylight-saving transitions are correct.
 - Persist all audit timestamps as `timestamptz`.
 
 The MVP roster and availability interfaces cover all seven ISO weekdays.
@@ -201,8 +228,11 @@ Recurring and date-specific availability intervals likewise require
 
 | Route | Page | Access |
 |---|---|---|
-| `/sign-in` | Continue with Google | Public |
-| `/access-pending` | Explains unapproved/inactive account | Authenticated but not active/linked |
+| `/sign-in` | Email/password sign-in | Public |
+| `/unauthorised` | Explains role denial | Authenticated |
+
+Unapproved, inactive, and approved-email-mismatched users remain on a
+fail-closed access state rendered by the authenticated route boundary.
 
 ### Shared authenticated routes
 
@@ -277,18 +307,18 @@ Assignment should use an RPC command that locks the relevant rows, repeats all
 checks server-side, validates any override reason, inserts the assignment, and
 writes audit history atomically. UI conflict checks are advisory only.
 
-Shift edits use a protected transactional `edit_shift` command rather than
-direct table updates. It locks the shift and active assignments, validates
-same-day/non-overnight timing, re-evaluates overlap, eligibility, active status,
-and availability, requires per-assignment override reasons where permitted,
-applies the edit, synchronises related workflow state, and audits everything
-atomically.
+Shift creation and draft edits use the protected transactional `save_shift`
+command. It validates same-day/non-overnight Melbourne local time, active
+references, staffing, supervisor identity, draft status, and assignment
+overlap, then writes audit history atomically. A table trigger additionally
+blocks changing date, time, location, or activity while the shift has active
+assignments; the supervisor must remove or replace those assignments first so
+eligibility and availability cannot silently become stale.
 
-Changing any employee-visible field on a published shift—title, date/time,
-location, activity type, or notes—resets acknowledgements for all active
-assignments. Changing required staffing alone does not. The command records
-which acknowledgements were reset. Cancellation does not delete historical
-acknowledgements.
+Published shifts cannot be edited. Unpublishing requires a reason and removes
+current acknowledgements through a database trigger so employees must
+acknowledge the next publication. Cancellation preserves the assignment and
+audit history.
 
 Deactivating staff is blocked while they have future active assignments on
 draft or published shifts. The supervisor must first remove/replace those
@@ -305,6 +335,21 @@ must not invent a status outside the confirmed `Pending`, `Approved`, and
 The design uses only a static Netlify deployment and Supabase Auth/PostgreSQL.
 It requires no paid service, background worker, email/SMS integration, or
 runtime Excel access. Expected usage for approximately ten staff is very small.
+
+`netlify.toml` is the production hosting contract:
+
+- Node 22, `npm run build`, and `dist`;
+- a 200 rewrite from all client routes to `index.html`;
+- CSP limited to the application origin and Supabase HTTPS/WSS;
+- frame, content-type, referrer, permissions, transport, and cache headers;
+- no Functions configuration.
+
+The production Vite build rejects missing variables, non-HTTPS Supabase URLs,
+and obvious secret/service-role keys. This is defence in depth; the publishable
+key is still public and RLS remains the authorization boundary.
+
+Free projects require a manual logical export routine and restore rehearsal.
+See `docs/NETLIFY_DEPLOYMENT.md` and `docs/PRODUCTION_CHECKLIST.md`.
 
 Free plans have provider-defined quotas and inactivity/retention behaviour that
 can change. Before deployment, verify then-current Supabase and Netlify limits,
@@ -323,7 +368,8 @@ data. This is an operational check, not a reason to introduce a paid service.
 
 ## Assumptions pending confirmation
 
-- Email/password is the provisional authentication method.
+- Email/password is the implemented MVP authentication method; account
+  provisioning and password resets remain manual owner operations.
 - No availability record means unavailable.
 - Date exceptions override recurring availability only for their time range.
 - Shifts and availability do not cross midnight.
@@ -338,17 +384,15 @@ data. This is an operational check, not a reason to introduce a paid service.
 
 ## Open inputs and questions
 
-1. Confirm the sign-in method and approved-account workflow.
-2. Identify the first supervisor's approved email for bootstrap.
+1. Identify the first production supervisor's approved email for bootstrap.
+2. Create/select the production Supabase Free project and Netlify Free site.
 3. Decide whether workbook week 11-19 roster data and the separate attendance
    sheet should be imported, and confirm the calendar year.
 4. Supply canonical staff identities and approve mappings for
    `Jamein`/`Jaemin`, `All Staff`, shadowing annotations, and combined calendar
    labels.
-5. Confirm availability, acknowledgement, reporting, and CSV assumptions above.
-6. Confirm what happens to a pending release request when its assignment or
-   shift changes for another reason.
-7. Verify current Supabase/Netlify free-tier limits immediately before
+5. Assign the production backup/export owner and schedule.
+6. Verify current Supabase/Netlify free-tier limits immediately before
    deployment.
 
 ## Architecture decisions to preserve

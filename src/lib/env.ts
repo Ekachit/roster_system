@@ -1,6 +1,10 @@
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
+if (anonKey?.startsWith('sb_secret_') || anonKey?.toLowerCase().includes('service_role')) {
+  throw new Error('A Supabase secret/service-role key must never be used in the browser.')
+}
+
 export const env = {
   supabaseUrl: url ?? 'http://127.0.0.1:55321',
   supabaseAnonKey: anonKey ?? 'local-development-placeholder',

@@ -1,84 +1,94 @@
 # AI Fitness Zone Roster
 
-Milestone 1 foundation for a small internal rostering application. The app uses
-React, Vite, strict TypeScript, Tailwind CSS, Supabase Auth/PostgreSQL/RLS, and
-is designed for a later Netlify Free deployment.
+An internal rostering MVP for approximately ten staff. The application is
+deployment-ready for a static Netlify Free site backed by Supabase Free. The
+production Supabase target is owner-provisioned; migration, authentication,
+deployment, and live smoke-test results must still be verified before the
+application is described as live.
+
+## MVP capabilities
+
+- Approved email/password users with employee and supervisor roles
+- Recurring and date-specific employee availability
+- Seven-day supervisor roster, conflict evaluation, assignment, publication,
+  removal, and replacement
+- Employee schedule, acknowledgement, and release requests
+- Append-only supervisor audit history
+- Current scheduled-hours reporting and formula-safe UTF-8 CSV export
+- Responsive employee and supervisor views using `Australia/Melbourne`
+
+The browser interface is not the security boundary. Supabase Row Level Security,
+restricted grants, database constraints, and authorization-checking RPCs enforce
+all private reads and protected mutations.
+
+## Technology
+
+- React 19, Vite, TypeScript, and Tailwind CSS
+- Supabase Auth and PostgreSQL with RLS
+- Vitest, React Testing Library, pgTAP, and Playwright
+- Static Netlify hosting; no Netlify Functions or paid add-ons
 
 ## Prerequisites
 
-- Node.js 20 or newer
+- Node.js 22
 - Docker Desktop
 - Supabase CLI
+- PowerShell for the local concurrency and end-to-end runners
 
 ## Local setup
 
-1. Install dependencies: `npm install`
-2. Start local Supabase: `supabase start`
-3. Copy the local Project URL and publishable key shown by the CLI into `.env`:
+1. Install exact dependencies:
+
+   ```powershell
+   npm ci
+   ```
+
+2. Start the local stack:
+
+   ```powershell
+   supabase start
+   ```
+
+3. Copy `.env.example` to `.env.local` and use the local Project URL and
+   publishable/legacy anon key printed by `supabase status`:
 
    ```text
    VITE_SUPABASE_URL=http://127.0.0.1:55321
-   VITE_SUPABASE_ANON_KEY=<local publishable key>
+   VITE_SUPABASE_ANON_KEY=<local publishable or anon key>
    ```
 
-4. Start Vite: `npm run dev`
-5. In local Supabase Studio/Auth, create a confirmed user whose email matches
-   one of the fictional approved profiles in `supabase/seed.sql` after
-   normalization. Public registration is disabled.
+4. Rebuild the disposable local database and synthetic seed:
 
-The local stack uses ports `55320`–`55327` to avoid collisions with another
-Supabase project. `supabase db reset` reapplies migrations and fictional seed
-data. Stop it with `supabase stop`.
-
-## Hosted Supabase setup
-
-1. Create a Supabase Free project.
-2. Apply `supabase/migrations` with the Supabase CLI (`supabase link`, then
-   `supabase db push`).
-3. Do not apply the fictional local seed to production unless explicitly
-   desired.
-4. Disable public sign-ups in Auth settings and use email/password.
-5. Bootstrap the first supervisor using the SQL editor before creating their
-   Auth account:
-
-   ```sql
-   insert into public.staff (email, full_name, role)
-   values ('approved-address@example.com', 'Supervisor name', 'supervisor');
+   ```powershell
+   supabase db reset
    ```
 
-6. Create and confirm that user through the Supabase Dashboard using exactly
-   the same normalized email. Set a temporary password and share it only through
-   a private channel.
-7. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` locally or in the host.
-   Never put a service-role/secret key in frontend environment variables.
+5. Start Vite:
 
-### Provisioning each employee
+   ```powershell
+   npm run dev
+   ```
 
-Email/password is the selected MVP authentication method. There is no public
-self-registration or email invitation workflow:
+Public registration is disabled. To sign in locally, create a confirmed
+synthetic Auth user whose normalized email matches a synthetic approved profile
+in `supabase/seed.sql`. Never add real staff data to seed, test, screenshot, or
+preview fixtures.
 
-1. The system owner or supervisor creates the approved staff profile in the
-   application.
-2. The system owner separately creates the corresponding Auth user in the
-   Supabase Dashboard using the exact same normalized email.
-3. The system owner gives the employee the temporary password through a private
-   channel.
-4. The employee opens Profile after first sign-in and uses **Change password**
-   to replace the temporary password.
-5. While production SMTP is not configured, the system owner manually resets
-   forgotten passwords through the Supabase Dashboard and communicates the new
-   temporary password privately.
+Local analytics is disabled in `supabase/config.toml` because it is unused by
+the application and the Supabase log collector is unreliable on the current
+Windows Docker configuration.
 
-Authorization continuously requires the Auth user ID, normalized current Auth
-email, and an active approved staff row to match. Changing an Auth email removes
-operational access immediately.
+## Environment variables
 
-A linked staff email is immutable in the normal supervisor workflow. A required
-change is an administrator-controlled maintenance operation: disable access,
-unlink `staff.auth_user_id`, update the approved email, create or update and
-confirm the matching Auth user, then deliberately relink it. Perform and verify
-this through trusted Supabase administration—not through the browser—and make
-sure at least one other authorized supervisor remains throughout.
+| Variable | Browser-safe value |
+|---|---|
+| `VITE_SUPABASE_URL` | Supabase Project URL |
+| `VITE_SUPABASE_ANON_KEY` | Supabase publishable key or legacy anon key |
+
+Vite embeds every `VITE_*` value in public JavaScript. Never use a Supabase
+secret key, service-role key, database password, access token, or private key.
+Production builds fail when either required variable is absent, when the URL is
+not HTTPS, or when an obvious secret/service-role key is supplied.
 
 ## Verification
 
@@ -86,31 +96,66 @@ sure at least one other authorized supervisor remains throughout.
 npm run lint
 npm run typecheck
 npm run test
-npm run build
 supabase test db
-.\supabase\tests\concurrent_last_supervisor.ps1
+npm run test:e2e
+$env:VITE_SUPABASE_URL='https://example.supabase.co'
+$env:VITE_SUPABASE_ANON_KEY='sb_publishable_build_verification'
+npm run build
+npm audit
+npm audit --omit=dev
+git diff --check
 ```
 
-Unix commands for npm and Supabase are identical. The concurrency verifier is a
-PowerShell script and requires PowerShell plus Docker. The application displays
-roster-facing time using `Australia/Melbourne`; Milestone 1 stores no roster
-times yet.
+`npm run test:e2e` resets the disposable local database and runs the complete
+MVP workflow with generated synthetic credentials. On the affected Windows
+Docker setup, `supabase db reset` can return a gateway 502 after migrations and
+seed have committed; the runner verifies the exact migration/fixture state
+before continuing and then requires three consecutive healthy Auth responses.
 
-## Security model
+## Production setup
 
-React route guards provide navigation feedback, while PostgreSQL RLS and
-security-definer functions are authoritative. Only active users whose current
-Auth UUID and normalized email both match their approved staff row receive an
-operational application identity. Employee reads are limited to their safe own
-profile and own eligibility. Supervisor notes live in a separate
-supervisor-only table. Roles, activation, Auth linkage, and eligibility are
-protected server-side. Inactive or email-mismatched linked users may read only
-their limited access-status response so the UI can explain why access is
-denied; they cannot read operational tables.
+Follow:
 
-## Milestone scope
+- [Netlify deployment](docs/NETLIFY_DEPLOYMENT.md)
+- [Production checklist](docs/PRODUCTION_CHECKLIST.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Database design](docs/DATABASE_DESIGN.md)
+- [Milestone 7 review](docs/reviews/MILESTONE_7_REVIEW.md)
 
-This milestone includes authentication, roles, staff, locations, activity
-types, eligibility, and foundation pages. Availability, shifts, schedules,
-release requests, reporting, notifications, calendar integration, and
-deployment are intentionally not implemented.
+Production account creation, migration push, staff provisioning, Netlify site
+creation, environment configuration, and smoke testing are manual account-level
+steps. Do not describe the application as deployed until the real
+`.netlify.app` URL has passed the production checklist.
+
+## Authentication and provisioning
+
+Email/password is the MVP method. Public sign-up and invitation workflows are
+disabled.
+
+1. Bootstrap the first approved supervisor row through trusted SQL as described
+   in `docs/NETLIFY_DEPLOYMENT.md`.
+2. Create and confirm the matching Auth user in the Supabase Dashboard.
+3. The supervisor adds subsequent approved staff profiles in the application.
+4. A system owner creates each matching Auth account and privately supplies a
+   temporary password.
+5. The user changes it from Profile after first sign-in.
+
+Authorization continuously requires a matching Auth UUID, normalized current
+Auth email, active approved staff row, and protected database role. Linked email
+changes require the documented administrator unlink-and-relink procedure.
+
+## Known limitations
+
+- Shifts and availability cannot cross midnight.
+- Scheduled hours are current rostered hours, not actual attendance or payroll.
+- Password reset is a manual owner task while custom production SMTP remains
+  intentionally out of scope.
+- The audit page returns the latest 200 matching events.
+- The current Vite bundle reports a non-failing large-chunk warning.
+- `npm audit` reports the upstream React Router RSC-action advisory. This Vite
+  SPA has no React Server Components, server actions, SSR, loaders, or actions,
+  so the affected execution path is absent; see the Milestone 7 review.
+
+Calendar integration, email/SMS, payroll, timesheet import, clock-in,
+geofencing, chat, automatic allocation, swapping, native applications, paid
+monitoring, and paid analytics remain out of scope.
