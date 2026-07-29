@@ -42,6 +42,7 @@ export function ReferenceManagementPage({ table, title }: { table: ReferenceTabl
 
   async function toggle(row: ReferenceRecord) {
     setMessage(null)
+    if (row.is_active && !window.confirm(`Deactivate ${row.name}? Existing roster history will be preserved, but it will no longer be available for new shifts.`)) return
     const { error: updateError } = await supabase.from(table).update({ is_active: !row.is_active }).eq('id', row.id)
     if (updateError) setError(updateError.message)
     else { setMessage(`${row.name} ${row.is_active ? 'deactivated' : 'activated'}.`); await load() }
@@ -54,7 +55,7 @@ export function ReferenceManagementPage({ table, title }: { table: ReferenceTabl
       {message && <p className="mt-4 rounded-lg bg-green-50 p-3 text-green-900" role="status">{message}</p>}
       {error && <div className="mt-4"><ErrorState message={error} retry={() => void load()} /></div>}
       <form onSubmit={save} className="card mt-6 grid gap-4 sm:grid-cols-4">
-        <label className="font-medium sm:col-span-2">Name<input className="field" required value={name} onChange={(e) => setName(e.target.value)} /></label>
+        <label className="font-medium sm:col-span-2">Name<input className="field" maxLength={100} required value={name} onChange={(e) => setName(e.target.value)} /></label>
         <label className="font-medium">Default start<input className="field" type="time" value={start} onChange={(e) => setStart(e.target.value)} /></label>
         <label className="font-medium">Default end<input className="field" type="time" value={end} onChange={(e) => setEnd(e.target.value)} /></label>
         <div className="flex gap-2 sm:col-span-4"><button className="button">{editing ? 'Update' : 'Add'}</button>{editing && <button type="button" className="button-secondary" onClick={reset}>Cancel</button>}</div>

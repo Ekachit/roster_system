@@ -172,6 +172,7 @@ export function RosterPage() {
   async function remove(assignment: ShiftAssignment) {
     const reason = window.prompt('Removal reason:')
     if (!reason?.trim()) return
+    if (!window.confirm(`Remove ${name(assignment.staff_id)} from this shift? The assignment will remain in history.`)) return
     const result = await supabase.rpc('remove_employee', { p_assignment_id: assignment.id, p_reason: reason })
     if (result.error) return setError(result.error.message)
     setMessage(`${name(assignment.staff_id)} removed; history preserved.`); await load()
@@ -192,6 +193,7 @@ export function RosterPage() {
     }
     const replacementReason = window.prompt('Replacement reason:')
     if (!replacementReason?.trim()) return
+    if (!window.confirm(`Replace ${name(assignment.staff_id)} with ${candidate.full_name}? The previous assignment will remain in history.`)) return
     const result = await supabase.rpc('replace_employee', {
       p_assignment_id: assignment.id, p_replacement_staff_id: replacement,
       p_assignment_kind: assignment.assignment_kind,
@@ -216,14 +218,14 @@ export function RosterPage() {
 
     <form className="card mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" onSubmit={save}>
       <h2 className="text-xl font-semibold sm:col-span-2 lg:col-span-4">{editing ? 'Edit draft shift' : 'Create draft shift'}</h2>
-      <label className="font-medium sm:col-span-2">Shift title<input className="field" required value={form.shift_title} onChange={(e) => setForm({ ...form, shift_title: e.target.value })} /></label>
+      <label className="font-medium sm:col-span-2">Shift title<input className="field" maxLength={160} required value={form.shift_title} onChange={(e) => setForm({ ...form, shift_title: e.target.value })} /></label>
       <label className="font-medium">Date<input className="field" type="date" required value={form.local_date} onChange={(e) => setForm({ ...form, local_date: e.target.value })} /></label>
       <label className="font-medium">Start<input className="field" type="time" required value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} /></label>
       <label className="font-medium">End<input className="field" type="time" required value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} /></label>
-      <label className="font-medium">Required staff<input className="field" type="number" min="1" required value={form.required_staff_count} onChange={(e) => setForm({ ...form, required_staff_count: Number(e.target.value) })} /></label>
+      <label className="font-medium">Required staff<input className="field" type="number" min="1" max="100" required value={form.required_staff_count} onChange={(e) => setForm({ ...form, required_staff_count: Number(e.target.value) })} /></label>
       <label className="font-medium">Location<select className="field" required value={form.location_id} onChange={(e) => setForm({ ...form, location_id: e.target.value })}><option value="">Select</option>{locations.filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       <label className="font-medium">Activity<select className="field" required value={form.activity_type_id} onChange={(e) => setForm({ ...form, activity_type_id: e.target.value })}><option value="">Select</option>{activities.filter((item) => item.is_active).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-      <label className="font-medium sm:col-span-2">Notes (optional)<input className="field" value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></label>
+      <label className="font-medium sm:col-span-2">Notes (optional)<input className="field" maxLength={2000} value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></label>
       <div className="flex gap-2 sm:col-span-2 lg:col-span-4"><button className="button" disabled={saving}>{saving ? 'Saving…' : editing ? 'Update draft' : 'Create shift'}</button>{editing && <button className="button-secondary" type="button" onClick={() => { setEditing(null); setForm(blankForm()) }}>Cancel edit</button>}</div>
     </form>
 

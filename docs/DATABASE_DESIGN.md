@@ -2,7 +2,7 @@
 
 ## Design goals
 
-The proposed Supabase PostgreSQL schema supports the MVP while keeping:
+The implemented Supabase PostgreSQL schema supports the MVP while keeping:
 
 - authentication identity separate from staff/business data;
 - private employee data protected by Row Level Security (RLS);
@@ -11,8 +11,10 @@ The proposed Supabase PostgreSQL schema supports the MVP while keeping:
 - times and durations correct in `Australia/Melbourne`;
 - derived values out of mutable columns where practical.
 
-This is a logical design. Exact SQL and migrations belong to Milestone 1 and
-later milestones.
+The authoritative physical schema is the ordered SQL in
+`supabase/migrations`. This document describes the implemented model through
+Milestone 7; production deployment must apply those migrations rather than
+recreating tables from prose.
 
 ## Extensions and conventions
 
@@ -20,9 +22,9 @@ later milestones.
 - Timestamps: `timestamptz`, default `now()`.
 - Names: `snake_case`.
 - Auth identity: nullable unique `staff.auth_user_id` referencing
-  `auth.users(id)`; nullable allows supervisor pre-approval before first Google
-  OAuth login. RLS requires exact normalised-email linkage to an active approved
-  staff row.
+  `auth.users(id)`; nullable allows supervisor pre-approval before the owner
+  creates the email/password Auth user. RLS requires exact normalized-email
+  linkage to an active approved staff row.
 - Email: `citext` or a unique index on `lower(trim(email))`.
 - Every mutable table has `created_at` and `updated_at`; meaningful authorship
   columns are included where needed.
@@ -36,20 +38,23 @@ later milestones.
 | Enum | Values |
 |---|---|
 | `staff_role` | `supervisor`, `employee` |
-| `shift_status` | `draft`, `published`, `cancelled` |
-| `assignment_status` | `assigned`, `removed` |
-| `release_request_status` | `pending`, `approved`, `rejected` |
+| `shift_status` | `DRAFT`, `PUBLISHED`, `CANCELLED` |
+| `assignment_kind` | `REGULAR`, `SHADOWING` |
+| assignment lifecycle | active when `removed_at is null`; otherwise historical |
+| `release_request_status` | `PENDING`, `APPROVED`, `REJECTED`, `CANCELLED` |
 | `availability_kind` | `available`, `unavailable` |
 
-`assignment_status` preserves removal history and makes reporting semantics
-explicit. Replacement is represented as one removed assignment plus one new
-assignment in the same transaction, linked through audit metadata.
+Replacement is represented as one historically removed assignment plus one new
+active assignment in the same transaction. `REGULAR` contributes to required
+staffing; `SHADOWING` is still conflict-checked, visible, acknowledgeable,
+audited, and included in current scheduled-hours reporting.
 
 ## Entity overview
 
 ```text
 auth.users 0..1 ---- 1 staff
                        |\
+                       | +---- staff_private_notes
                        | +---- staff_locations ---- locations
                        | +---- staff_activity_types ---- activity_types
                        | +---- recurring_availability
@@ -63,7 +68,7 @@ shifts ---- shift_assignments ---- staff
    +---- locations
    +---- activity_types
 
-audit_events --> actor staff and optional subject/shift/request identifiers
+roster_audit --> actor staff and optional subject/shift/request identifiers
 ```
 
 ## Tables
@@ -80,13 +85,26 @@ Approved staff directory and application authorisation record.
 | `full_name` | `text` | required, non-blank |
 | `role` | `staff_role` | required, defaults `employee` |
 | `is_active` | `boolean` | required, defaults true |
-| `supervisor_notes` | `text` | nullable, supervisor-only |
 | `created_by` | `uuid` | nullable FK to `staff`; null for bootstrap |
 | `created_at` | `timestamptz` | required |
 | `updated_at` | `timestamptz` | required |
 
 Role and `auth_user_id` changes must not be allowed through general employee
 profile updates. Prevent deactivation/demotion of the last active supervisor.
+Milestone 7 limits names to 120 characters and emails to 320 characters.
+
+### `staff_private_notes`
+
+Supervisor-only notes are physically separated from safe staff identity data.
+
+| Column | Type | Rules |
+|---|---|---|
+| `staff_id` | `uuid` | PK/FK to `staff` |
+| `note` | `text` | nullable, maximum 2,000 characters |
+| `updated_at` | `timestamptz` | required |
+
+Employees have no row visibility. The supervisor directory is a
+`security_invoker`/`security_barrier` view so underlying RLS still applies.
 
 ### `locations`
 
@@ -173,28 +191,30 @@ availability interval may cross midnight.
 | Column | Type | Rules |
 |---|---|---|
 | `id` | `uuid` | PK |
-| `starts_at` | `timestamptz` | required |
-| `ends_at` | `timestamptz` | required, greater than start |
+| `shift_title` | `text` | required, trimmed, maximum 160 characters |
+| `local_date` | `date` | required Melbourne roster date |
+| `start_time` | `time` | required |
+| `end_time` | `time` | required, greater than start |
 | `location_id` | `uuid` | FK `locations`, required |
 | `activity_type_id` | `uuid` | FK `activity_types`, required |
-| `required_staff_count` | `integer` | required, at least 1 |
-| `notes` | `text` | nullable, employee-visible when published |
-| `status` | `shift_status` | required, defaults `draft` |
+| `required_staff_count` | `integer` | required, 1 through 100 |
+| `notes` | `text` | nullable, employee-visible, maximum 2,000 characters |
+| `status` | `shift_status` | required, defaults `DRAFT` |
 | `created_by` | `uuid` | FK `staff`, required |
+| `updated_by` | `uuid` | FK `staff`, required |
 | `published_at` | `timestamptz` | nullable |
-| `published_by` | `uuid` | nullable FK `staff` |
 | `cancelled_at` | `timestamptz` | nullable |
-| `cancelled_by` | `uuid` | nullable FK `staff` |
-| `cancellation_reason` | `text` | nullable |
 | `created_at`, `updated_at` | `timestamptz` | required |
 
 Status transition commands populate/clear the relevant metadata. “Copy” creates
 a new draft and does not copy assignments, acknowledgements, or release
 requests.
 
-A constraint/trigger requires start and end to fall on the same
-`Australia/Melbourne` local date. The MVP accepts all seven weekdays; overnight
-shifts are prohibited.
+The database validates each boundary through `Australia/Melbourne`, rejects
+nonexistent DST times, accepts all seven weekdays, and prohibits overnight
+shifts. Reports convert the two local boundaries to instants before calculating
+duration. Status commands preserve the actor and reason in `roster_audit`;
+copying creates a new draft without assignments, acknowledgements, or requests.
 
 ### `shift_assignments`
 
@@ -203,20 +223,20 @@ shifts are prohibited.
 | `id` | `uuid` | PK |
 | `shift_id` | `uuid` | FK `shifts`, required |
 | `staff_id` | `uuid` | FK `staff`, required |
-| `counts_toward_staffing` | `boolean` | generated/derived true only for `regular` |
-| `status` | `assignment_status` | required, defaults `assigned` |
+| `assignment_kind` | `assignment_kind` | `REGULAR` or `SHADOWING` |
 | `assigned_by` | `uuid` | FK `staff`, required |
 | `assigned_at` | `timestamptz` | required |
 | `removed_by` | `uuid` | nullable FK `staff` |
 | `removed_at` | `timestamptz` | nullable |
-| `removal_reason` | `text` | nullable |
-| `availability_overridden` | `boolean` | required, defaults false |
-| `override_reason` | `text` | nullable |
-| `created_at`, `updated_at` | `timestamptz` | required |
+| `removal_reason` | `text` | nullable, maximum 1,000 characters |
+| `override_confirmed` | `boolean` | required, defaults false |
+| `override_reason` | `text` | nullable, maximum 1,000 characters |
+| `override_conflicts` | `jsonb` | structured server-evaluated reasons |
+| `replaced_by_assignment_id` | `uuid` | nullable self-FK |
 
 Use a partial unique index on `(shift_id, staff_id)` where
-`status = 'assigned'`. When `availability_overridden` is true, require a
-non-blank reason. Only availability failures are overridable; inactive,
+`removed_at is null`. When `override_confirmed` is true, require a non-blank
+reason and structured conflicts. Only availability failures are overridable; inactive,
 ineligible, duplicate, and overlapping assignment failures remain prohibited.
 Only active regular assignments count toward `required_staff_count`. Shadowing
 assignments are still scheduled, conflict-checked, employee-visible,
@@ -249,45 +269,50 @@ retains historical acknowledgements.
 | `id` | `uuid` | PK |
 | `assignment_id` | `uuid` | FK `shift_assignments`, required |
 | `staff_id` | `uuid` | FK `staff`, required |
-| `reason` | `text` | required, non-blank |
-| `status` | `release_request_status` | required, defaults `pending` |
+| `reason` | `text` | required, non-blank, maximum 200 characters |
+| `note` | `text` | nullable, maximum 1,000 characters |
+| `status` | `release_request_status` | required, defaults `PENDING` |
 | `submitted_at` | `timestamptz` | required |
 | `resolved_at` | `timestamptz` | nullable |
 | `resolved_by` | `uuid` | nullable FK `staff` |
-| `resolution_note` | `text` | nullable |
+| `resolution_reason` | `text` | nullable, maximum 1,000 characters |
 | `replacement_assignment_id` | `uuid` | nullable FK `shift_assignments` |
 | `created_at`, `updated_at` | `timestamptz` | required |
 
-Use a partial unique index on `assignment_id` where `status = 'pending'`.
+Use a partial unique index on `assignment_id` where `status = 'PENDING'`.
 Employee inserts derive `staff_id` from the current linked profile and validate
 assignment ownership. Only a supervisor command resolves requests. Approval and
 assignment removal/replacement occur in the same transaction.
 
 Approve-and-remove or approve-and-replace sets the selected request to
-`approved`. The outcome when an assignment changes for another reason remains
-open in `docs/OPEN_QUESTIONS.md`. Confirmed request transitions, assignment
-changes, and audit events must be atomic.
+`APPROVED`. An independent removal, replacement, or shift cancellation sets an
+otherwise pending request to `CANCELLED` with a system-generated explanation.
+Unpublishing retains it. Request transitions, assignment changes, and audit
+events are atomic.
 
-### `audit_events`
+### `roster_audit`
 
 Append-only system history.
 
 | Column | Type | Rules |
 |---|---|---|
 | `id` | `bigint generated always as identity` | PK |
-| `occurred_at` | `timestamptz` | required |
-| `actor_staff_id` | `uuid` | nullable FK `staff` |
+| `created_at` | `timestamptz` | required |
+| `actor_staff_id` | `uuid` | FK `staff`, required |
 | `action` | `text` | required, controlled action code |
+| `entity_type`, `entity_id` | `text`, `uuid` | normalized target |
 | `shift_id` | `uuid` | nullable FK `shifts` |
+| `assignment_id` | `uuid` | nullable FK `shift_assignments` |
 | `subject_staff_id` | `uuid` | nullable FK `staff` |
 | `release_request_id` | `uuid` | nullable FK `release_requests` |
-| `reason` | `text` | nullable |
+| `reason` | `text` | nullable, maximum 2,000 characters |
+| `before_data`, `after_data` | `jsonb` | minimal changed fields |
 | `details` | `jsonb` | required, defaults `{}` |
 
-The actor can be null for bootstrap/system actions. `details` should contain
-only relevant before/after fields and must never contain Auth tokens, password
-data, or unrestricted private notes. Audit writes come from triggers or trusted
-commands, never direct browser inserts.
+Audit data contains only relevant changed fields and must never contain Auth
+tokens, passwords, or unrestricted private notes. Audit writes come from
+trusted commands. Browser roles lack mutation privileges and the Milestone 7
+`BEFORE UPDATE OR DELETE` trigger rejects even privileged SQL mutation.
 
 ## Views and database functions
 
@@ -297,7 +322,8 @@ Prefer views/functions that return the minimum columns required.
 
 - `current_staff_id()` — linked active staff ID for `auth.uid()`, or null.
 - `is_supervisor()` — true only for linked, active supervisor.
-- `local_shift_date(shift_id)` — Melbourne date.
+- `require_supervisor()` — raises before protected supervisor data is read.
+- Internal workflow locks and validators are not browser executable.
 
 Implement helpers as stable SQL security-definer functions with a fixed
 `search_path`, schema-qualified objects, and no public execute permission unless
@@ -305,56 +331,52 @@ needed by clients.
 
 ### Query functions/views
 
-- `evaluate_staff_for_shift(p_shift_id, p_staff_id)` returns eligibility,
-  availability, overlap, `is_assignable`, `requires_override`, and reason codes.
-- `available_staff_for_shift(p_shift_id)` returns one row per active eligible
-  staff member plus structured reason data; supervisors only.
-- `supervisor_weekly_roster(p_week_start, p_location_id, p_activity_type_id)`
-  returns shift cards and computed staffing counts.
-- `employee_schedule(p_from, p_to)` returns only the caller’s published,
-  currently assigned shifts.
-- `scheduled_hours_report(p_from, p_to, p_statuses default
-  array['published'], p_assignment_statuses default array['assigned'])`
-  returns shift rows and duration minutes for supervisors; the frontend creates
-  CSV.
+- `assignment_conflicts(shift_id, staff_id)` and `shift_candidates(shift_id)`
+  return structured active/eligibility/overlap/availability reasons to
+  supervisors.
+- `supervisor_roster_shifts(start_date, end_date)`,
+  `supervisor_roster_assignments()`, and `shift_staffing(shift_id)` return the
+  supervisor roster contract without broad base-table reads.
+- `employee_schedule()` returns only the caller's active published assignments
+  plus their own cancelled history and constrained co-worker names.
+- Employee and supervisor release-request projections expose only their
+  role-specific workflow fields.
+- `supervisor_audit_history(action, entity_type, limit)` returns append-only
+  history to supervisors.
+- `scheduled_hours_report(start_date, end_date, staff_id, location_id,
+  activity_type_id)` returns only published active assignments and the exact
+  CSV-safe columns.
 
-The report should calculate `extract(epoch from (ends_at - starts_at))/60`.
-Do not trust a stored duration. Default scope is published, non-cancelled shifts
-with currently active assignments. Draft, cancelled, and removed records
-require an explicit supervisor filter.
+The report converts both local boundaries through `Australia/Melbourne`,
+subtracts the resulting instants, and rounds to integer minutes. It never
+trusts a stored duration.
 
 ### Command functions
 
-- `assign_staff(p_shift_id, p_staff_id, p_override_reason default null)`
-- `edit_shift(p_shift_id, p_expected_updated_at, p_patch,
-  p_assignment_override_reasons default '{}')`
-- `remove_assignment(p_assignment_id, p_reason)`
-- `replace_assignment(p_assignment_id, p_new_staff_id, p_reason,
-  p_override_reason default null)`
-- `deactivate_staff(p_staff_id)`
-- `publish_shift(p_shift_id)`
-- `cancel_shift(p_shift_id, p_reason)`
-- `acknowledge_assignment(p_assignment_id)`
-- `submit_release_request(p_assignment_id, p_reason)`
-- `resolve_release_request(...)`
+- `save_staff_configuration(...)`, `set_staff_active(...)`
+- availability save/delete functions for recurring rules and date exceptions
+- `save_shift(...)`, `copy_shift(...)`, `set_shift_status(...)`
+- `assign_employee(...)`, `remove_employee(...)`, `replace_employee(...)`
+- `acknowledge_assignment(assignment_id)`
+- `submit_release_request(...)`, `reject_release_request(...)`
+- `approve_release_request_remove(...)`,
+  `approve_release_request_replace(...)`
 
 Each command checks the caller, locks relevant records, enforces invariants,
 writes all changes, and produces audit events in one transaction. Revoke
 function execution from `public`/`anon` and grant only to `authenticated` where
 the function performs its own authorisation.
 
-`edit_shift` is the only browser-accessible way to mutate an existing shift. It
-uses `p_expected_updated_at` for stale-edit detection and accepts only an
-allowlisted typed patch. It locks the shift and assignments; validates
-seven-day same-day timing and status; rechecks active status,
-eligibility, overlap, and availability; requires per-assignment reasons for
-permitted availability overrides; resets acknowledgements when required;
-synchronises release requests; and audits the transaction.
+`save_shift` is the only browser-accessible way to create or edit a shift and
+edits only `DRAFT` rows. Status, assignment, replacement, release resolution,
+and acknowledgement transitions use separate purpose-specific functions. Every
+function derives the actor from `auth.uid()` and repeats authorization and
+invariants inside the transaction.
 
-`deactivate_staff` locks the staff row and rejects deactivation while that
-person has an active assignment on a draft or published shift with
-`ends_at > now()`. The supervisor UI lists those assignments so they can be
-removed or replaced first.
+`set_staff_active` serializes staff-state changes and rejects deactivation while
+the person has an active assignment on a draft or published shift whose
+Melbourne date is today or later. The supervisor must remove or replace those
+assignments first.
 
 ## Row Level Security approach
 
@@ -407,11 +429,11 @@ policies should be small and tested as a matrix.
 
 **Shifts and assignments**
 
-- Supervisors read and create shifts. Revoke direct `UPDATE`/`DELETE` from
-  browser roles; existing shifts change only through protected commands,
-  including mandatory transactional `edit_shift`.
-- Employee shift reads require a currently assigned row belonging to the caller
-  and `shift.status = 'published'`.
+- Authenticated browser roles have no direct shift/assignment base-table read
+  or mutation grants. Supervisors use protected projections and commands.
+- Employee schedule reads require the caller's active assignment and
+  `shift.status = 'PUBLISHED'`; their own cancelled history is returned
+  separately by the same constrained function.
 - Do not provide employees a broad assignments policy for the same shift: it
   could expose staffing history. A constrained function/view should return only
   current co-worker IDs and names for a shift the caller is actively assigned
@@ -454,15 +476,16 @@ At minimum:
 - unique case-insensitive location/activity names;
 - primary keys on both eligibility join columns;
 - check `end_time > start_time` for availability;
-- check `ends_at > starts_at` and `required_staff_count >= 1` for shifts;
-- check shift boundaries share one Melbourne-local date;
-- partial unique active assignment `(shift_id, staff_id)`;
+- check `end_time > start_time`, valid Melbourne boundaries, and
+  `required_staff_count` between 1 and 100;
+- partial unique active assignment `(shift_id, staff_id)` where
+  `removed_at is null`;
 - partial unique pending release request per assignment;
 - check override reason is present exactly when required;
 - indexes on availability `(staff_id, weekday)` and
   `(staff_id, local_date)`;
-- indexes on `shifts(starts_at, status)`, `shift_assignments(staff_id, status)`,
-  and audit foreign keys/timestamp.
+- indexes on `shifts(local_date, status)`, active assignment staff/shift, and
+  audit foreign keys/timestamp.
 
 Add database-trigger protection for:
 

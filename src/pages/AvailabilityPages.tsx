@@ -117,7 +117,7 @@ export function EmployeeAvailabilityPage() {
         <label className="font-medium">End time<input className="field" type="time" required value={recurringForm.end_time} onChange={(e) => setRecurringForm({ ...recurringForm, end_time: e.target.value })} /></label>
         <label className="font-medium">Effective from<input className="field" type="date" required value={recurringForm.effective_start_date} onChange={(e) => setRecurringForm({ ...recurringForm, effective_start_date: e.target.value })} /></label>
         <label className="font-medium">Effective until (optional)<input className="field" type="date" value={recurringForm.effective_end_date} onChange={(e) => setRecurringForm({ ...recurringForm, effective_end_date: e.target.value })} /></label>
-        <label className="font-medium sm:col-span-2 lg:col-span-3">Note (optional)<input className="field" value={recurringForm.note} onChange={(e) => setRecurringForm({ ...recurringForm, note: e.target.value })} /></label>
+        <label className="font-medium sm:col-span-2 lg:col-span-3">Note (optional)<input className="field" maxLength={500} value={recurringForm.note} onChange={(e) => setRecurringForm({ ...recurringForm, note: e.target.value })} /></label>
         <div className="flex gap-2 lg:col-span-4"><button className="button" disabled={saving}>{saving ? 'Saving…' : editingRecurring ? 'Update rule' : 'Add recurring rule'}</button>{editingRecurring && <button type="button" className="button-secondary" onClick={() => { setEditingRecurring(null); setRecurringForm(recurringInitial()) }}>Cancel</button>}</div>
       </form>
       <AvailabilityList loading={loading} empty="No recurring availability yet. You are unavailable unless a date-specific available exception applies.">
@@ -133,7 +133,7 @@ export function EmployeeAvailabilityPage() {
         <label className="flex items-center gap-2 font-medium"><input type="checkbox" checked={exceptionForm.is_full_day} disabled={exceptionForm.kind === 'available'} onChange={(e) => setExceptionForm({ ...exceptionForm, is_full_day: e.target.checked })} />Unavailable all day</label>
         <div />
         {!exceptionForm.is_full_day && <><label className="font-medium">Start time<input className="field" type="time" required value={exceptionForm.start_time} onChange={(e) => setExceptionForm({ ...exceptionForm, start_time: e.target.value })} /></label><label className="font-medium">End time<input className="field" type="time" required value={exceptionForm.end_time} onChange={(e) => setExceptionForm({ ...exceptionForm, end_time: e.target.value })} /></label></>}
-        <label className="font-medium sm:col-span-2">Note (optional)<input className="field" value={exceptionForm.note} onChange={(e) => setExceptionForm({ ...exceptionForm, note: e.target.value })} /></label>
+        <label className="font-medium sm:col-span-2">Note (optional)<input className="field" maxLength={500} value={exceptionForm.note} onChange={(e) => setExceptionForm({ ...exceptionForm, note: e.target.value })} /></label>
         <div className="flex gap-2 lg:col-span-4"><button className="button" disabled={saving}>{saving ? 'Saving…' : editingException ? 'Update exception' : 'Add date exception'}</button>{editingException && <button type="button" className="button-secondary" onClick={() => { setEditingException(null); setExceptionForm(exceptionInitial()) }}>Cancel</button>}</div>
       </form>
       <AvailabilityList loading={loading} empty="No date-specific exceptions.">

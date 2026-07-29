@@ -89,6 +89,7 @@ export function StaffManagementPage() {
 
   async function toggle(row: StaffRecord) {
     setMessage(null)
+    if (row.is_active && !window.confirm(`Deactivate ${row.full_name}? They will lose application access and cannot be assigned to future shifts.`)) return
     const { error: updateError } = await supabase.rpc('set_staff_active', { p_staff_id: row.id, p_is_active: !row.is_active })
     if (updateError) setError(updateError.message)
     else { setMessage(`${row.full_name} ${row.is_active ? 'deactivated' : 'activated'}.`); await load() }
@@ -102,10 +103,10 @@ export function StaffManagementPage() {
       {error && <div className="mt-4"><ErrorState message={error} retry={() => void load()} /></div>}
       {eligibilityLoadError && <div className="mt-4 rounded-lg bg-red-50 p-3 text-red-900" role="alert"><p>{eligibilityLoadError}</p><button type="button" className="button-secondary mt-3" onClick={retryEligibility}>Retry eligibility load</button></div>}
       <form onSubmit={save} className="card mt-6 grid gap-4 sm:grid-cols-2">
-        <label className="font-medium">Full name<input className="field" required value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></label>
-        <label className="font-medium">Email<input className="field" type="email" required disabled={Boolean(editing && rows.find((item) => item.id === editing)?.is_linked)} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />{editing && rows.find((item) => item.id === editing)?.is_linked && <span className="mt-1 block text-sm text-slate-600">Linked emails require the administrator unlink-and-relink procedure.</span>}</label>
+        <label className="font-medium">Full name<input className="field" maxLength={120} required value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></label>
+        <label className="font-medium">Email<input className="field" type="email" maxLength={320} required disabled={Boolean(editing && rows.find((item) => item.id === editing)?.is_linked)} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />{editing && rows.find((item) => item.id === editing)?.is_linked && <span className="mt-1 block text-sm text-slate-600">Linked emails require the administrator unlink-and-relink procedure.</span>}</label>
         <label className="font-medium">Role<select className="field" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as StaffRole })}><option value="employee">Employee</option><option value="supervisor">Supervisor</option></select></label>
-        <label className="font-medium">Supervisor-only notes<textarea className="field min-h-24" value={form.supervisor_notes} onChange={(e) => setForm({ ...form, supervisor_notes: e.target.value })} /></label>
+        <label className="font-medium">Supervisor-only notes<textarea className="field min-h-24" maxLength={2000} value={form.supervisor_notes} onChange={(e) => setForm({ ...form, supervisor_notes: e.target.value })} /></label>
         <fieldset><legend className="font-medium">Eligible locations</legend><div className="mt-2 grid gap-2">{locations.filter((item) => item.is_active).map((item) => <label key={item.id} className="flex items-center gap-2"><input type="checkbox" checked={locationIds.includes(item.id)} onChange={() => toggleId(item.id, locationIds, setLocationIds)} />{item.name}</label>)}</div></fieldset>
         <fieldset><legend className="font-medium">Eligible activity types</legend><div className="mt-2 grid gap-2">{activities.filter((item) => item.is_active).map((item) => <label key={item.id} className="flex items-center gap-2"><input type="checkbox" checked={activityIds.includes(item.id)} onChange={() => toggleId(item.id, activityIds, setActivityIds)} />{item.name}</label>)}</div></fieldset>
         <div className="flex gap-2 sm:col-span-2"><button className="button" disabled={eligibilityLoading || Boolean(eligibilityLoadError)}>{eligibilityLoading ? 'Loading eligibility…' : editing ? 'Update staff' : 'Add approved staff'}</button>{editing && <button type="button" className="button-secondary" onClick={() => { setEditing(null); setForm(initial); setLocationIds([]); setActivityIds([]); setEligibilityLoadError(null); setEligibilityLoading(false) }}>Cancel</button>}</div>
